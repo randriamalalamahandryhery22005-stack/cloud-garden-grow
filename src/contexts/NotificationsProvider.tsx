@@ -144,33 +144,25 @@ export default function NotificationsProvider({ children }: { children: React.Re
       const Icon = isVoice ? Mic : MessageCircle;
       toast.custom(
         (id) => (
-          <div className="flex items-start gap-3 min-w-[280px] max-w-sm rounded-2xl border border-white/10 bg-slate-900/95 backdrop-blur-lg shadow-2xl p-3 pr-4">
-            <div className={`w-10 h-10 shrink-0 rounded-xl flex items-center justify-center ${isVoice ? "bg-emerald-500/20 text-emerald-300" : "bg-violet-500/20 text-violet-300"}`}>
-              <Icon className="w-5 h-5" />
+          <div
+            onClick={() => { toast.dismiss(id); navigate("/chat"); }}
+            className="cursor-pointer flex items-center gap-3 w-[300px] max-w-[88vw] rounded-2xl border border-white/10 bg-slate-950/85 backdrop-blur-xl shadow-[0_18px_40px_-16px_rgba(0,0,0,0.8)] px-3 py-2.5 transition hover:border-white/20"
+          >
+            <div className={`w-9 h-9 shrink-0 rounded-xl flex items-center justify-center ${isVoice ? "bg-emerald-500/15 text-emerald-300" : "bg-violet-500/15 text-violet-300"}`}>
+              <Icon className="w-4.5 h-4.5" />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-white truncate">{senderName}</p>
-              <p className="text-xs text-slate-300 truncate">
+              <p className="text-[13px] font-semibold text-white truncate">{senderName}</p>
+              <p className="text-[11px] text-slate-400 truncate">
                 {isVoice ? "🎤 Message vocal" : (msg.content || (msg.image_url ? "📷 Image" : "Nouveau message"))}
               </p>
-              <div className="mt-2 flex gap-2">
-                <button
-                  onClick={() => { toast.dismiss(id); navigate("/chat"); }}
-                  className="text-[11px] font-semibold px-2.5 py-1 rounded-lg bg-violet-600 hover:bg-violet-500 text-white transition"
-                >
-                  Ouvrir
-                </button>
-                <button
-                  onClick={() => toast.dismiss(id)}
-                  className="text-[11px] font-medium px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-white/80 transition"
-                >
-                  Ignorer
-                </button>
-              </div>
             </div>
+            <span className="shrink-0 text-[11px] font-semibold px-2.5 py-1.5 rounded-lg bg-violet-600/90 text-white">
+              Ouvrir
+            </span>
           </div>
         ),
-        { duration: 6000 }
+        { duration: 5000 }
       );
     };
 
@@ -182,25 +174,23 @@ export default function NotificationsProvider({ children }: { children: React.Re
       play("text");
       toast.custom(
         (id) => (
-          <div className="flex items-start gap-3 min-w-[280px] max-w-sm rounded-2xl border border-white/10 bg-slate-900/95 backdrop-blur-lg shadow-2xl p-3 pr-4">
-            <div className="w-10 h-10 shrink-0 rounded-xl bg-blue-500/20 text-blue-300 flex items-center justify-center">
-              <Bell className="w-5 h-5" />
+          <div
+            onClick={() => toast.dismiss(id)}
+            className="cursor-pointer flex items-center gap-3 w-[300px] max-w-[88vw] rounded-2xl border border-white/10 bg-slate-950/85 backdrop-blur-xl shadow-[0_18px_40px_-16px_rgba(0,0,0,0.8)] px-3 py-2.5 transition hover:border-white/20"
+          >
+            <div className="w-9 h-9 shrink-0 rounded-xl bg-blue-500/15 text-blue-300 flex items-center justify-center">
+              <Bell className="w-4.5 h-4.5" />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-white truncate">{n.title}</p>
-              <p className="text-xs text-slate-300 line-clamp-2">{n.message}</p>
-              <button
-                onClick={() => toast.dismiss(id)}
-                className="mt-2 text-[11px] font-medium px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-white/80 transition"
-              >
-                OK
-              </button>
+              <p className="text-[13px] font-semibold text-white truncate">{n.title}</p>
+              <p className="text-[11px] text-slate-400 line-clamp-2">{n.message}</p>
             </div>
           </div>
         ),
-        { duration: 6000 }
+        { duration: 5000 }
       );
     };
+
 
     const dbChannel = supabase
       .channel(`global-notifs-${user.id}`)
