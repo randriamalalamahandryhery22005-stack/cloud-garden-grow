@@ -403,6 +403,7 @@ export type Database = {
           id: string
           is_active: boolean
           payment_proof_url: string | null
+          price_amount: number | null
           user_id: string
         }
         Insert: {
@@ -413,6 +414,7 @@ export type Database = {
           id?: string
           is_active?: boolean
           payment_proof_url?: string | null
+          price_amount?: number | null
           user_id: string
         }
         Update: {
@@ -423,6 +425,7 @@ export type Database = {
           id?: string
           is_active?: boolean
           payment_proof_url?: string | null
+          price_amount?: number | null
           user_id?: string
         }
         Relationships: []
@@ -922,10 +925,14 @@ export type Database = {
       }
       profiles: {
         Row: {
+          avatar_url: string | null
+          birth_date: string | null
+          country_code: string | null
           created_at: string
           device_id: string | null
           device_info: string | null
           email: string
+          full_name: string | null
           gen_store_last_seen_at: string | null
           gender: string | null
           id: string
@@ -935,16 +942,21 @@ export type Database = {
           login_count: number
           name: string
           phone: string | null
+          region: string | null
           status: string
           trial_started_at: string | null
           updated_at: string
           user_id: string
         }
         Insert: {
+          avatar_url?: string | null
+          birth_date?: string | null
+          country_code?: string | null
           created_at?: string
           device_id?: string | null
           device_info?: string | null
           email: string
+          full_name?: string | null
           gen_store_last_seen_at?: string | null
           gender?: string | null
           id?: string
@@ -954,16 +966,21 @@ export type Database = {
           login_count?: number
           name: string
           phone?: string | null
+          region?: string | null
           status?: string
           trial_started_at?: string | null
           updated_at?: string
           user_id: string
         }
         Update: {
+          avatar_url?: string | null
+          birth_date?: string | null
+          country_code?: string | null
           created_at?: string
           device_id?: string | null
           device_info?: string | null
           email?: string
+          full_name?: string | null
           gen_store_last_seen_at?: string | null
           gender?: string | null
           id?: string
@@ -973,6 +990,7 @@ export type Database = {
           login_count?: number
           name?: string
           phone?: string | null
+          region?: string | null
           status?: string
           trial_started_at?: string | null
           updated_at?: string
