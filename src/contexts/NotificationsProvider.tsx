@@ -32,6 +32,8 @@ export default function NotificationsProvider({ children }: { children: React.Re
   const unlockedRef = useRef(false);
   const lastPlayRef = useRef<Record<string, number>>({});
   const seenCallsRef = useRef<Set<string>>(new Set());
+  const lastRingRef = useRef<{ callId: string; at: number } | null>(null);
+
 
   // Débloque l'audio au premier geste utilisateur (politique d'autoplay)
   useEffect(() => {
