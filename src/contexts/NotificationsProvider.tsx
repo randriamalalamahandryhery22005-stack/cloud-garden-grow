@@ -205,6 +205,8 @@ export default function NotificationsProvider({ children }: { children: React.Re
         const callerId = payload?.from as string | undefined;
         const callId = payload?.callId as string | undefined;
         if (!callerId || !callId || callerId === user.id) return;
+        // Battement de cœur : on note le dernier signal reçu pour cet appel
+        lastRingRef.current = { callId, at: Date.now() };
         if (seenCallsRef.current.has(callId)) return;
         seenCallsRef.current.add(callId);
 
@@ -234,6 +236,20 @@ export default function NotificationsProvider({ children }: { children: React.Re
         }
       })
       .subscribe();
+
+    // Filet de sécurité : si l'appelant raccroche sans que l'annulation arrive,
+    // l'appel entrant disparaît dès que le battement de cœur s'interrompt.
+    const watchdog = window.setInterval(() => {
+      const current = incomingRef.current;
+      if (!current) return;
+      const last = lastRingRef.current;
+      if (!last || last.callId !== current.id) return;
+      if (Date.now() - last.at > 9000) {
+        stopRing();
+        setIncomingCall(null);
+      }
+    }, 2000);
+
 
     return () => {
       try { supabase.removeChannel(dbChannel); } catch {}
