@@ -86,24 +86,25 @@ export default function NotificationsProvider({ children }: { children: React.Re
     play("call");
     toast.custom(
       (id) => (
-        <div className="flex items-start gap-3 min-w-[280px] max-w-sm rounded-2xl border border-white/10 bg-slate-900/95 backdrop-blur-lg shadow-2xl p-3 pr-4">
-          <div className="w-10 h-10 shrink-0 rounded-xl bg-rose-500/20 text-rose-300 flex items-center justify-center">
-            <PhoneMissed className="w-5 h-5" />
+        <div className="flex items-center gap-3 w-[300px] max-w-[88vw] rounded-2xl border border-white/10 bg-slate-950/85 backdrop-blur-xl shadow-[0_18px_40px_-16px_rgba(0,0,0,0.8)] px-3 py-2.5">
+          <div className="w-9 h-9 shrink-0 rounded-xl bg-rose-500/15 text-rose-300 flex items-center justify-center">
+            <PhoneMissed className="w-4.5 h-4.5" />
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-white truncate">Appel manqué</p>
-            <p className="text-xs text-slate-300 truncate">de {c.callerName}</p>
-            <button
-              onClick={() => { toast.dismiss(id); openPanel(); }}
-              className="mt-2 text-[11px] font-semibold px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white transition"
-            >
-              Rappeler
-            </button>
+            <p className="text-[13px] font-semibold text-white truncate">Appel manqué</p>
+            <p className="text-[11px] text-slate-400 truncate">de {c.callerName}</p>
           </div>
+          <button
+            onClick={() => { toast.dismiss(id); openPanel(); }}
+            className="shrink-0 text-[11px] font-semibold px-2.5 py-1.5 rounded-lg bg-emerald-600/90 hover:bg-emerald-500 text-white transition"
+          >
+            Rappeler
+          </button>
         </div>
       ),
-      { duration: 8000 }
+      { duration: 5000 }
     );
+
     // Persistent notification (visible on all screens through the global notifs stream)
     try {
       await supabase.from("notifications").insert({
