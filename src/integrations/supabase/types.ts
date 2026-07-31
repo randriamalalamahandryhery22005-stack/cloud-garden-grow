@@ -396,6 +396,7 @@ export type Database = {
       }
       game_access: {
         Row: {
+          days_requested: number
           expires_at: string | null
           game_mode: string
           granted_at: string
@@ -404,9 +405,11 @@ export type Database = {
           is_active: boolean
           payment_proof_url: string | null
           price_amount: number | null
+          rejection_reason: string | null
           user_id: string
         }
         Insert: {
+          days_requested?: number
           expires_at?: string | null
           game_mode: string
           granted_at?: string
@@ -415,9 +418,11 @@ export type Database = {
           is_active?: boolean
           payment_proof_url?: string | null
           price_amount?: number | null
+          rejection_reason?: string | null
           user_id: string
         }
         Update: {
+          days_requested?: number
           expires_at?: string | null
           game_mode?: string
           granted_at?: string
@@ -426,6 +431,7 @@ export type Database = {
           is_active?: boolean
           payment_proof_url?: string | null
           price_amount?: number | null
+          rejection_reason?: string | null
           user_id?: string
         }
         Relationships: []
