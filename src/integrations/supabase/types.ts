@@ -14,129 +14,16 @@ export type Database = {
   }
   public: {
     Tables: {
-      activation_codes: {
-        Row: {
-          code_name: string
-          code_value: string
-          id: string
-          updated_at: string
-          updated_by: string | null
-        }
-        Insert: {
-          code_name: string
-          code_value?: string
-          id?: string
-          updated_at?: string
-          updated_by?: string | null
-        }
-        Update: {
-          code_name?: string
-          code_value?: string
-          id?: string
-          updated_at?: string
-          updated_by?: string | null
-        }
-        Relationships: []
-      }
-      app_config: {
-        Row: {
-          config: Json
-          created_at: string
-          created_by: string | null
-          id: string
-          is_active: boolean
-          notes: string | null
-          prompt: string | null
-          version: number
-        }
-        Insert: {
-          config?: Json
-          created_at?: string
-          created_by?: string | null
-          id?: string
-          is_active?: boolean
-          notes?: string | null
-          prompt?: string | null
-          version: number
-        }
-        Update: {
-          config?: Json
-          created_at?: string
-          created_by?: string | null
-          id?: string
-          is_active?: boolean
-          notes?: string | null
-          prompt?: string | null
-          version?: number
-        }
-        Relationships: []
-      }
-      online_users: {
-        Row: {
-          device_id: string | null
-          last_ping: string
-          updated_at: string
-          user_id: string
-        }
-        Insert: {
-          device_id?: string | null
-          last_ping?: string
-          updated_at?: string
-          user_id: string
-        }
-        Update: {
-          device_id?: string | null
-          last_ping?: string
-          updated_at?: string
-          user_id?: string
-        }
-        Relationships: []
-      }
-      prediction_logs: {
-        Row: {
-          created_at: string
-          custom_prediction_id: string | null
-          id: string
-          input_params: Json
-          mode: string
-          reliability_avg: number | null
-          results: Json
-          user_id: string
-        }
-        Insert: {
-          created_at?: string
-          custom_prediction_id?: string | null
-          id?: string
-          input_params?: Json
-          mode: string
-          reliability_avg?: number | null
-          results?: Json
-          user_id: string
-        }
-        Update: {
-          created_at?: string
-          custom_prediction_id?: string | null
-          id?: string
-          input_params?: Json
-          mode?: string
-          reliability_avg?: number | null
-          results?: Json
-          user_id?: string
-        }
-        Relationships: []
-      }
+      [_ in never]: never
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
       __import_exec: { Args: { sql: string }; Returns: undefined }
-      app_access_code_required: { Args: never; Returns: boolean }
-      consume_user_coins: { Args: never; Returns: undefined }
-      verify_app_access_code: { Args: { _code: string }; Returns: boolean }
     }
     Enums: {
-      app_role: "admin" | "user"
+      [_ in never]: never
     }
     CompositeTypes: {
       [_ in never]: never
@@ -263,8 +150,6 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {
-      app_role: ["admin", "user"],
-    },
+    Enums: {},
   },
 } as const
