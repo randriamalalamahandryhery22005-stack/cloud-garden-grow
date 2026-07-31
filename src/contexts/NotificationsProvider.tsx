@@ -254,10 +254,12 @@ export default function NotificationsProvider({ children }: { children: React.Re
 
 
     return () => {
+      window.clearInterval(watchdog);
       try { supabase.removeChannel(dbChannel); } catch {}
       try { supabase.removeChannel(ringChannel); } catch {}
       stopRing();
     };
+
   }, [user, play, startRing, stopRing, navigate]);
 
   const overlay = useMemo(
