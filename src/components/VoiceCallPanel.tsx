@@ -287,9 +287,15 @@ export default function VoiceCallPanel({
             ringChannelRef.current = rc;
             rc.subscribe((st) => {
               if (st === "SUBSCRIBED" && iAmInitiator) {
-                rc.send({ type: "broadcast", event: "ring", payload: { callId, from: userId } });
+                const ring = () =>
+                  rc.send({ type: "broadcast", event: "ring", payload: { callId, from: userId } });
+                ring();
+                // Battement de cœur : le destinataire ferme l'appel entrant dès qu'il s'arrête
+                if (ringHeartbeatRef.current) window.clearInterval(ringHeartbeatRef.current);
+                ringHeartbeatRef.current = window.setInterval(ring, 3000);
               }
             });
+
           }
         });
     } catch (e: any) {
