@@ -46,6 +46,8 @@ export default function VoiceCallPanel({
   const localStreamRef = useRef<MediaStream | null>(null);
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const ringChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const ringHeartbeatRef = useRef<number | null>(null);
+
   const callIdRef = useRef<string>("");
   const peersRef = useRef<Record<string, PeerState>>({});
   const audioContainerRef = useRef<HTMLDivElement>(null);
