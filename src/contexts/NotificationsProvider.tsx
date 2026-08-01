@@ -75,10 +75,28 @@ export default function NotificationsProvider({ children }: { children: React.Re
     openPanel();
   }, [openPanel, stopRing]);
 
-  const declineCall = useCallback((_c: IncomingCall) => {
+  const declineCall = useCallback((c: IncomingCall) => {
     stopRing();
     setIncomingCall(null);
-  }, [stopRing]);
+    // Fast path: tell the caller immediately over the ring channel.
+    const ch = supabase.channel("chatsup_voice_ring", { config: { broadcast: { self: false } } });
+    ch.subscribe((st) => {
+      if (st === "SUBSCRIBED") {
+        ch.send({ type: "broadcast", event: "call-declined", payload: { callId: c.id, from: user?.id } });
+        window.setTimeout(() => { try { supabase.removeChannel(ch); } catch { /* noop */ } }, 300);
+      }
+    });
+    // Robust path: best-effort persisted trace so the caller sees it even if offline momentarily.
+    if (user) {
+      void supabase.from("notifications").insert({
+        title: "Appel refusé",
+        message: "L'appel a été refusé.",
+        target_user_id: c.callerId,
+        created_by: user.id,
+        is_global: false,
+      }).then(({ error }) => { if (error) console.warn("decline notify error", error); });
+    }
+  }, [stopRing, user]);
 
   const missedCall = useCallback(async (c: IncomingCall) => {
     stopRing();

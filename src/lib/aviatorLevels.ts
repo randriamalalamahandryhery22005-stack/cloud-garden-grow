@@ -214,11 +214,13 @@ export function recommendLevel(stats: HistoryStats): LevelRecommendation {
     (stats.longestBlueStreak >= 5 ? 12 : 0) +
     (stats.roundsSinceHigh >= 8 ? 10 : 0);
 
-  const scores: Array<{ level: LevelId; score: number }> = [
-    { level: 1, score: s1 },
-    { level: 2, score: s2 },
-    { level: 3, score: s3 },
-  ].sort((a, b) => b.score - a.score);
+  const scores: Array<{ level: LevelId; score: number }> = (
+    [
+      { level: 1 as LevelId, score: s1 },
+      { level: 2 as LevelId, score: s2 },
+      { level: 3 as LevelId, score: s3 },
+    ]
+  ).sort((a, b) => b.score - a.score);
 
   const best = scores[0];
   const margin = best.score - scores[1].score;
