@@ -3,6 +3,8 @@
 // à la volée sans dépendance à un fichier binaire (fonctionne toujours,
 // même hors ligne).
 
+import ringtoneAsset from "@/assets/ringtone-call.ogg.asset.json";
+
 export type SoundKind =
   | "message"
   | "voice"
@@ -205,20 +207,65 @@ export function startRingtone(): () => void {
   const s = readSoundSettings();
   let stopped = false;
   let timer: number | null = null;
+  let fallbackTimer: number | null = null;
+  let retryHandler: (() => void) | null = null;
 
-  const tick = () => {
-    if (stopped) return;
-    if (s.enabled) {
-      try { playDesign("ring", Math.max(0.35, s.volume), true); } catch { /* noop */ }
-    }
-    timer = window.setTimeout(tick, 1400);
+  // Fallback synthesized ring (used if the audio file fails or is blocked)
+  const startSynthFallback = () => {
+    if (fallbackTimer !== null || stopped) return;
+    const tick = () => {
+      if (stopped) return;
+      if (s.enabled) {
+        try { playDesign("ring", Math.max(0.35, s.volume), true); } catch { /* noop */ }
+      }
+      fallbackTimer = window.setTimeout(tick, 1400);
+    };
+    tick();
   };
-  tick();
-  if (navigator.vibrate) navigator.vibrate([300, 200, 300, 200, 300]);
+
+  let audio: HTMLAudioElement | null = null;
+  try {
+    audio = new Audio(ringtoneAsset.url);
+  } catch {
+    audio = null;
+  }
+
+  if (audio && s.enabled) {
+    audio.loop = true;
+    audio.volume = Math.max(0.35, s.volume);
+    audio.addEventListener("error", () => { if (!stopped) startSynthFallback(); });
+    const play = () => {
+      audio?.play().catch(() => {
+        // Autoplay blocked: retry on the very next user gesture, never throw.
+        if (retryHandler || stopped) return;
+        retryHandler = () => {
+          if (stopped) return;
+          audio?.play().catch(() => startSynthFallback());
+        };
+        window.addEventListener("pointerdown", retryHandler, { once: true });
+        window.addEventListener("keydown", retryHandler, { once: true });
+        // Also make sure something audible happens even before the gesture.
+        startSynthFallback();
+      });
+    };
+    play();
+  } else if (s.enabled) {
+    startSynthFallback();
+  }
+
+  if (navigator.vibrate) {
+    try { navigator.vibrate([300, 200, 300, 200, 300]); } catch { /* noop */ }
+  }
 
   return () => {
     stopped = true;
     if (timer) window.clearTimeout(timer);
-    if (navigator.vibrate) navigator.vibrate(0);
+    if (fallbackTimer) window.clearTimeout(fallbackTimer);
+    if (audio) { try { audio.pause(); audio.currentTime = 0; } catch { /* noop */ } }
+    if (retryHandler) {
+      window.removeEventListener("pointerdown", retryHandler);
+      window.removeEventListener("keydown", retryHandler);
+    }
+    if (navigator.vibrate) { try { navigator.vibrate(0); } catch { /* noop */ } }
   };
 }
