@@ -218,34 +218,36 @@ export default function NotificationsProvider({ children }: { children: React.Re
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "notifications" }, handleNotification)
       .subscribe();
 
-    // Voice call ring signaling via broadcast (no DB table required)
+    // Resolves caller profile then raises the incoming-call overlay, de-duplicated by call id.
+    const showIncomingCall = async (callId: string, callerId: string) => {
+      if (!callId || !callerId || callerId === user.id) return;
+      lastRingRef.current = { callId, at: Date.now() };
+      if (seenCallsRef.current.has(callId)) return;
+      seenCallsRef.current.add(callId);
+
+      const { data: prof } = await supabase
+        .from("public_profiles")
+        .select("user_id,name,full_name,avatar_url")
+        .eq("user_id", callerId)
+        .maybeSingle();
+      const p = prof as Profile | null;
+      const callerName = p?.full_name || p?.name || "Appel entrant";
+
+      play("call");
+      startRing();
+      setIncomingCall({
+        id: callId,
+        callerId,
+        callerName,
+        avatarUrl: p?.avatar_url ?? null,
+      });
+    };
+
+    // Fast path: voice call ring signaling via broadcast (no DB round-trip).
     const ringChannel = supabase
       .channel("chatsup_voice_ring", { config: { broadcast: { self: false } } })
-      .on("broadcast", { event: "ring" }, async ({ payload }) => {
-        const callerId = payload?.from as string | undefined;
-        const callId = payload?.callId as string | undefined;
-        if (!callerId || !callId || callerId === user.id) return;
-        // Battement de cœur : on note le dernier signal reçu pour cet appel
-        lastRingRef.current = { callId, at: Date.now() };
-        if (seenCallsRef.current.has(callId)) return;
-        seenCallsRef.current.add(callId);
-
-        const { data: prof } = await supabase
-          .from("public_profiles")
-          .select("user_id,name,full_name,avatar_url")
-          .eq("user_id", callerId)
-          .maybeSingle();
-        const p = prof as Profile | null;
-        const callerName = p?.full_name || p?.name || "Appel entrant";
-
-        play("call");
-        startRing();
-        setIncomingCall({
-          id: callId,
-          callerId,
-          callerName,
-          avatarUrl: p?.avatar_url ?? null,
-        });
+      .on("broadcast", { event: "ring" }, ({ payload }) => {
+        void showIncomingCall(payload?.callId as string, payload?.from as string);
       })
       .on("broadcast", { event: "ring-cancel" }, ({ payload }) => {
         const callId = payload?.callId as string | undefined;
@@ -255,6 +257,36 @@ export default function NotificationsProvider({ children }: { children: React.Re
           setIncomingCall(null);
         }
       })
+      .subscribe();
+
+    // Robust path: DB-backed fallback so a callee who joined late (or missed the
+    // broadcast) still gets notified. voice_calls rows use caller_id/callee_id;
+    // any freshly-created "active" row where we are not the caller is treated as a ring.
+    const dbCallChannel = supabase
+      .channel(`incoming-calls-db-${user.id}`)
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "voice_calls" },
+        (payload) => {
+          const row = payload.new as { id: string; caller_id: string; status: string; created_at: string };
+          if (!row || row.status !== "active") return;
+          if (row.caller_id === user.id) return;
+          if (Date.now() - new Date(row.created_at).getTime() > 60_000) return;
+          void showIncomingCall(row.id, row.caller_id);
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "voice_calls" },
+        (payload) => {
+          const row = payload.new as { id: string; status: string };
+          if (!row) return;
+          if ((row.status === "ended" || row.status === "declined" || row.status === "missed") && incomingRef.current?.id === row.id) {
+            stopRing();
+            setIncomingCall(null);
+          }
+        }
+      )
       .subscribe();
 
     // Filet de sécurité : si l'appelant raccroche sans que l'annulation arrive,
@@ -275,6 +307,7 @@ export default function NotificationsProvider({ children }: { children: React.Re
       window.clearInterval(watchdog);
       try { supabase.removeChannel(dbChannel); } catch {}
       try { supabase.removeChannel(ringChannel); } catch {}
+      try { supabase.removeChannel(dbCallChannel); } catch {}
       stopRing();
     };
 

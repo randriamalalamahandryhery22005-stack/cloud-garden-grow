@@ -285,6 +285,12 @@ export default function VoiceCallPanel({
             const iAmInitiator = room?.initiated_by === userId;
             const rc = supabase.channel("chatsup_voice_ring", { config: { broadcast: { self: false } } });
             ringChannelRef.current = rc;
+            rc.on("broadcast", { event: "call-declined" }, ({ payload }) => {
+              if (payload?.callId !== callId) return;
+              stopRingback();
+              if (ringHeartbeatRef.current) { window.clearInterval(ringHeartbeatRef.current); ringHeartbeatRef.current = null; }
+              toast.info("Appel refusé");
+            });
             rc.subscribe((st) => {
               if (st === "SUBSCRIBED" && iAmInitiator) {
                 const ring = () =>
