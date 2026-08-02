@@ -29,6 +29,7 @@ import {
 import { COUNTRIES } from "@/lib/countries";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { deviceLimitReached, registerAccountOnThisDevice, MAX_ACCOUNTS_PER_DEVICE } from "@/lib/deviceAccounts";
 import jhLogo from "@/assets/jh-logo.png";
 import { rememberCurrentAccount } from "@/lib/savedAccounts";
 
@@ -261,6 +262,12 @@ const Signup = () => {
 
     setLoading(true);
     try {
+      if (await deviceLimitReached()) {
+        throw new Error(
+          `Limite atteinte : ${MAX_ACCOUNTS_PER_DEVICE} comptes maximum peuvent être créés depuis cet appareil. La création d'un nouveau compte est refusée.`
+        );
+      }
+
       const cleanEmail = formData.email.trim().toLowerCase();
       const cleanPhone = normalizePhone(formData.phone);
 
@@ -357,6 +364,10 @@ const Signup = () => {
       }
 
       await refreshProfile();
+
+      try {
+        await registerAccountOnThisDevice(userId);
+      } catch { /* non bloquant */ }
 
       // Remember this account on this device (Facebook-style quick relogin)
       try {
