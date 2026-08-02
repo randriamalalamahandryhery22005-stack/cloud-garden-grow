@@ -8,6 +8,7 @@ import bet261Logo from "@/assets/bet261-logo.png";
 import { aviatorLogo } from "@/lib/gameLogos";
 import { cosmoxLogo } from "@/lib/gameLogos";
 import { jetxLogo } from "@/lib/gameLogos";
+import GameLogoFrame from "@/components/GameLogoFrame";
 
 import type { GameStats } from "@/hooks/useGameStats";
 
