@@ -124,9 +124,7 @@ const Bet261Hub = ({ gameStats, mostPopular, onTrack }: Props) => {
               <div className="relative animate-zoom-in-soft" style={{ animationDelay: `${180 + i * 70}ms` }}>
                 <div className="absolute inset-[-3px] rounded-2xl opacity-60 pointer-events-none group-hover:opacity-100 transition-opacity animate-glow-gold-loop"
                      style={{ background: "conic-gradient(from 45deg, hsl(var(--gold)/0.6), transparent 45%, hsl(var(--gold)/0.6))", filter: "blur(4px)" }} />
-                <div className="relative w-14 h-14 rounded-2xl overflow-hidden ring-1 ring-[hsl(var(--gold)/0.35)] bg-[hsl(var(--emerald-abyss))]">
-                  <img src={g.logo} alt={g.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" loading="lazy" decoding="async" />
-                </div>
+                <GameLogoFrame src={g.logo} alt={g.name} size="md" className="ring-[hsl(var(--gold)/0.35)] bg-[hsl(var(--emerald-abyss))]" />
               </div>
 
               <div className="text-center space-y-0.5 relative">
