@@ -8,7 +8,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
-import { uploadWithProgress } from "@/lib/uploadWithProgress";
 import { toast } from "sonner";
 import { grantSubscriptionCoins } from "@/lib/coins";
 
@@ -58,7 +57,6 @@ const SubscriptionWizard = ({
   const [proofFile, setProofFile] = useState<File | null>(null);
   const [proofPreview, setProofPreview] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
-  const [proofPct, setProofPct] = useState<number | null>(null);
   const [proofSent, setProofSent] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [chatText, setChatText] = useState("");
@@ -181,17 +179,9 @@ const SubscriptionWizard = ({
     setUploading(true);
     const ext = proofFile.name.split(".").pop() || "jpg";
     const path = `${user.id}/${requestId}.${ext}`;
-    try {
-      setProofPct(0);
-      await uploadWithProgress("payment-proofs", path, proofFile, {
-        contentType: proofFile.type || "image/jpeg",
-        upsert: true,
-        onProgress: setProofPct,
-      });
-    } catch (e: any) {
-      toast.error("Envoi impossible", { description: e?.message });
-      setUploading(false); setProofPct(null); return;
-    }
+    const { error: upErr } = await supabase.storage
+      .from("payment-proofs").upload(path, proofFile, { upsert: true });
+    if (upErr) { toast.error("Envoi impossible", { description: upErr.message }); setUploading(false); return; }
     const { data: signed } = await supabase.storage
       .from("payment-proofs").createSignedUrl(path, 60 * 60 * 24 * 365);
     const proofUrl = signed?.signedUrl ?? null;
@@ -209,7 +199,6 @@ const SubscriptionWizard = ({
     });
 
     setUploading(false);
-    setProofPct(null);
     setProofSent(true);
     setStep("track");
     fetchMessages();
@@ -447,17 +436,6 @@ const SubscriptionWizard = ({
             <Button variant="secondary" className="h-12 px-4" onClick={() => setStep("pay")}>
               <ArrowLeft className="w-4 h-4" />
             </Button>
-            {proofPct !== null && (
-              <div className="space-y-1 mb-2">
-                <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-                  <span>Transfert de la preuve…</span>
-                  <span className="font-semibold tabular-nums">{proofPct}%</span>
-                </div>
-                <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
-                  <div className="h-full rounded-full bg-primary transition-all duration-200" style={{ width: `${proofPct}%` }} />
-                </div>
-              </div>
-            )}
             <Button variant="premium" className="flex-1 h-12 font-bold" onClick={sendProof} disabled={!proofFile || uploading}>
               {uploading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Send className="w-4 h-4 mr-2" />}
               {uploading ? "Envoi…" : "Envoyer la preuve"}

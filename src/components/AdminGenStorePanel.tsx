@@ -91,12 +91,8 @@ const AdminGenStorePanel = ({ onPublished }: { onPublished?: () => void }) => {
             upsert: false,
           });
         if (upErr) throw upErr;
-        // Le bucket est privé : on stocke une URL signée longue durée
-        const { data: signed } = await supabase.storage
-          .from(GEN_STORE_BUCKET)
-          .createSignedUrl(path, 60 * 60 * 24 * 365);
-        fileUrl = signed?.signedUrl || null;
-
+        const { data: pub } = supabase.storage.from(GEN_STORE_BUCKET).getPublicUrl(path);
+        fileUrl = pub?.publicUrl || null;
         fileName = file.name;
         fileSize = file.size;
         mime = file.type || null;

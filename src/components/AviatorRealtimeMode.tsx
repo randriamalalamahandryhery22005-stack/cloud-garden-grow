@@ -4,8 +4,8 @@ import { ArrowLeft, Play, BarChart3, Zap, Activity, Signal, Radar, Sparkles, Clo
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { generatePremiumPrediction } from "@/lib/predictions";
 import type { PredictionResult } from "@/lib/predictions";
-import { formatCoeff, runLevel1, type HistoryStats } from "@/lib/aviatorLevels";
 import AnalysisSequence from "@/components/AnalysisSequence";
 import PredictionResults from "@/components/PredictionResults";
 import { useGameStats } from "@/hooks/useGameStats";
@@ -14,9 +14,7 @@ interface Props {
   showSeconds: boolean;
   accessStart: string | null;
   accessExpiry: string | null;
-  stats?: HistoryStats;
   onBack: () => void;
-  onNewCapture?: () => void;
 }
 
 const RealtimeLogo = () => (
@@ -37,13 +35,7 @@ interface ZoneState {
 
 const initialZone: ZoneState = { timeInput: "", coeffInput: "", results: null, error: "" };
 
-const FALLBACK_STATS: HistoryStats = {
-  count: 0, mean: 2.4, median: 1.9, max: 12, min: 1.01, volatility: 4,
-  under2Ratio: 0.5, mid2to5Ratio: 0.32, high5plusRatio: 0.18, extreme20Ratio: 0.04,
-  longestBlueStreak: 3, longestHotStreak: 3, roundsSinceHigh: 4, trend: "Stable",
-};
-
-const AviatorRealtimeMode = ({ showSeconds, accessStart, accessExpiry, stats, onBack, onNewCapture }: Props) => {
+const AviatorRealtimeMode = ({ showSeconds, accessStart, accessExpiry, onBack }: Props) => {
   const [zones, setZones] = useState<Record<ZoneId, ZoneState>>({ A: { ...initialZone }, B: { ...initialZone } });
   const [pending, setPending] = useState<{ zone: ZoneId; h: number; m: number; coeff: number } | null>(null);
   const [showSplash, setShowSplash] = useState(false);
@@ -69,20 +61,12 @@ const AviatorRealtimeMode = ({ showSeconds, accessStart, accessExpiry, stats, on
   const handleSplashComplete = useCallback(() => {
     if (!pending) return;
     const { zone, h, m, coeff } = pending;
-    const outcome = runLevel1({ h, m, s: 0, coefficient: coeff, stats: stats ?? FALLBACK_STATS });
-    const results: PredictionResult[] = outcome.rows.map((r) => ({
-      time: showSeconds ? r.time : r.time.slice(0, 5),
-      coefficient: formatCoeff(r.coefficient),
-      confidence: r.confidence,
-      stability: r.stability,
-      risk: r.risk,
-      reliability: r.reliability,
-    }));
+    const results = generatePremiumPrediction(h, m, coeff, showSeconds);
     setZones((z) => ({ ...z, [zone]: { ...z[zone], results, error: "" } }));
     setShowSplash(false);
     setPending(null);
     trackGameUsage("aviator-premium", "realtime");
-  }, [pending, showSeconds, stats, trackGameUsage]);
+  }, [pending, showSeconds, trackGameUsage]);
 
   const renderZone = (id: ZoneId, label: string) => {
     const z = zones[id];
@@ -125,11 +109,6 @@ const AviatorRealtimeMode = ({ showSeconds, accessStart, accessExpiry, stats, on
             </p>
           </div>
           <span className="luxe-badge-live">LIVE</span>
-          {onNewCapture && (
-            <button onClick={onNewCapture} className="luxe-back ml-1" aria-label="Nouvelle capture">
-              <RotateCcw className="w-4 h-4" />
-            </button>
-          )}
         </div>
         {(accessStart || accessExpiry) && (
           <div className="mt-2 flex gap-3 px-2 text-[10px] text-white/40">
