@@ -5,6 +5,7 @@ import { aviatorLogo } from "@/lib/gameLogos";
 import { cosmoxLogo } from "@/lib/gameLogos";
 import { jetxLogo } from "@/lib/gameLogos";
 import analysisLogo from "@/assets/logo-aviator-premium.png";
+import GameLogoFrame from "@/components/GameLogoFrame";
 
 type HomeGame = Extract<GameKey, "aviator-premium" | "cosmox" | "jetx">;
 
@@ -92,9 +93,7 @@ const HomeCurrentRoundAnalysis = () => {
               className={`group relative overflow-hidden rounded-2xl border-2 ${g.border} bg-gradient-to-br ${g.accent} p-3 flex flex-col items-center gap-2 transition-all active:scale-[0.96] hover:scale-[1.03] hover:shadow-lg`}
               style={{ animation: `fade-up 0.4s ease ${150 + i * 70}ms forwards`, opacity: 0 }}
             >
-              <div className="w-14 h-14 rounded-2xl bg-card/70 border border-border/40 flex items-center justify-center overflow-hidden shadow-inner">
-                <img src={g.logo} alt={g.name} className="w-11 h-11 object-contain drop-shadow" />
-              </div>
+              <GameLogoFrame src={g.logo} alt={g.name} size="md" />
               <div className="text-center">
                 <p className="text-xs font-black leading-tight">{g.name}</p>
                 <span
@@ -116,7 +115,7 @@ const HomeCurrentRoundAnalysis = () => {
               <ChevronLeft className="w-3.5 h-3.5" /> Changer de jeu
             </button>
             <div className="inline-flex items-center gap-2 rounded-full border border-border/40 bg-card/60 px-2.5 py-1">
-              <img src={active.logo} alt={active.name} className="w-5 h-5 object-contain" />
+              <img src={active.logo} alt={active.name} className="w-5 h-5 object-contain object-center" />
               <span className="text-[11px] font-bold">{active.name}</span>
             </div>
           </div>

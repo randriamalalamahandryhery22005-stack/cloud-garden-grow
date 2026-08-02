@@ -4,6 +4,7 @@ import { ChevronDown, Lock, Rocket, Zap } from "lucide-react";
 import { toast } from "sonner";
 import onexbetLogo from "@/assets/1xbet-logo.png";
 import { aviatorLogo } from "@/lib/gameLogos";
+import GameLogoFrame from "@/components/GameLogoFrame";
 import aviatorStudioLogo from "@/assets/logo-aviator-studio.png";
 import aviatorSpribeLogo from "@/assets/logo-aviator-spribe.png";
 import type { GameStats } from "@/hooks/useGameStats";
@@ -73,9 +74,7 @@ const OnexbetHub = ({ gameStats, onTrack }: Props) => {
         className="group relative w-full flex items-center gap-3 p-3.5 rounded-2xl sunset-border overflow-hidden text-left transition-all duration-300 hover:-translate-y-0.5 active:scale-[0.98]
           bg-[linear-gradient(155deg,hsl(var(--sunset-ink))_0%,hsl(258_45%_10%)_100%)]"
       >
-        <div className="relative w-14 h-14 rounded-2xl overflow-hidden ring-1 ring-[hsl(var(--sunset-orange)/0.6)] bg-[hsl(var(--sunset-ink))] flex items-center justify-center shrink-0">
-          <img src={aviatorLogo} alt="Aviator" className="w-full h-full object-contain p-1.5 group-hover:scale-110 transition-transform duration-500" loading="lazy" decoding="async" />
-        </div>
+        <GameLogoFrame src={aviatorLogo} alt="Aviator" size="md" className="ring-[hsl(var(--sunset-orange)/0.6)] bg-[hsl(var(--sunset-ink))]" />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5">
             <span className="text-[9px] uppercase tracking-[0.22em] font-bold text-[hsl(var(--sunset-amber))]">Sélection</span>
