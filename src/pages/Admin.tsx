@@ -118,6 +118,7 @@ const Admin = () => {
   const [newUpdateUrl, setNewUpdateUrl] = useState("");
   const [newUpdateTitle, setNewUpdateTitle] = useState("Mise à jour");
   const [searchQuery, setSearchQuery] = useState("");
+  const [restrictedCount, setRestrictedCount] = useState(0);
   const [userFilter, setUserFilter] = useState<"all" | "free" | "premium">("all");
   const [userPointsMap, setUserPointsMap] = useState<Record<string, number>>({});
   const [gameUsageStats, setGameUsageStats] = useState<Record<string, number>>({});
@@ -404,6 +405,23 @@ const Admin = () => {
   // Game stats sorted by usage
   const sortedGames = Object.entries(gameUsageStats).sort((a, b) => b[1] - a[1]);
   const mostPopularGame = sortedGames[0]?.[0] || null;
+
+  useEffect(() => {
+    let alive = true;
+    const loadRestricted = async () => {
+      const { count } = await supabase
+        .from("profiles")
+        .select("user_id", { count: "exact", head: true })
+        .in("status", ["restricted", "blocked"]);
+      if (alive) setRestrictedCount(count ?? 0);
+    };
+    void loadRestricted();
+    const ch = supabase
+      .channel(`admin-restricted-count-${Math.random().toString(36).slice(2)}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, () => void loadRestricted())
+      .subscribe();
+    return () => { alive = false; try { supabase.removeChannel(ch); } catch { /* noop */ } };
+  }, []);
 
   const tabs: { id: Tab; label: string; icon: React.ReactNode; badge?: number }[] = [
     { id: "dashboard", label: "Accueil", icon: <BarChart3 className="w-3.5 h-3.5" /> },
