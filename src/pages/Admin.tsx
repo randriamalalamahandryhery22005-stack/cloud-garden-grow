@@ -15,6 +15,7 @@ import AdminOnlineUsersPanel from "@/components/AdminOnlineUsersPanel";
 import AdminGenStorePanel from "@/components/AdminGenStorePanel";
 import AdminSecurityPanel from "@/components/AdminSecurityPanel";
 import AdminReviewsPanel from "@/components/AdminReviewsPanel";
+import AdminRestrictedPanel from "@/components/AdminRestrictedPanel";
 import AdminPremiumBonusPanel from "@/components/AdminPremiumBonusPanel";
 
 import { toast } from "sonner";
@@ -43,7 +44,7 @@ interface GameAccess {
 interface AppUpdate { id: string; title: string; update_url: string; is_active: boolean; created_at: string; }
 interface UserPoints { user_id: string; total: number; }
 
-type Tab = "dashboard" | "users" | "codes" | "resets" | "premium" | "bonuses" | "settings" | "points" | "notifications" | "rewards" | "chat" | "sessions" | "online_live" | "gen_store" | "security" | "reviews";
+type Tab = "dashboard" | "users" | "codes" | "resets" | "premium" | "bonuses" | "settings" | "points" | "notifications" | "rewards" | "chat" | "sessions" | "online_live" | "gen_store" | "security" | "reviews" | "restricted";
 
 interface OnlineSession {
   user_id: string;
@@ -422,6 +423,7 @@ const Admin = () => {
     { id: "gen_store", label: "J&H Store", icon: <ImageIcon className="w-3.5 h-3.5" /> },
     { id: "security", label: "Sécurité", icon: <Shield className="w-3.5 h-3.5" /> },
     { id: "reviews", label: "Examens", icon: <Shield className="w-3.5 h-3.5" /> },
+    { id: "restricted", label: "Comptes restreints", icon: <UserX className="w-3.5 h-3.5" />, badge: restrictedCount || undefined },
     
   ];
 
@@ -429,7 +431,7 @@ const Admin = () => {
 
   const TAB_GROUPS: { title: string; items: Tab[] }[] = [
     { title: "Vue d'ensemble", items: ["dashboard", "online_live", "sessions", "points"] },
-    { title: "Utilisateurs & accès", items: ["users", "premium", "bonuses", "rewards", "resets"] },
+    { title: "Utilisateurs & accès", items: ["users", "restricted", "premium", "bonuses", "rewards", "resets"] },
     { title: "Contenu & comm.", items: ["chat", "notifications", "gen_store"] },
     { title: "Configuration", items: ["codes", "settings", "security", "reviews"] },
   ];
@@ -1412,6 +1414,11 @@ const Admin = () => {
         {tab === "security" && (
           <div style={{ animation: "fade-up 0.4s ease forwards" }}>
             <AdminSecurityPanel />
+          </div>
+        )}
+        {tab === "restricted" && (
+          <div style={{ animation: "fade-up 0.4s ease forwards" }}>
+            <AdminRestrictedPanel />
           </div>
         )}
         {tab === "reviews" && (
