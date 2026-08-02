@@ -46,8 +46,6 @@ export default function VoiceCallPanel({
   const localStreamRef = useRef<MediaStream | null>(null);
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const ringChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
-  const ringHeartbeatRef = useRef<number | null>(null);
-
   const callIdRef = useRef<string>("");
   const peersRef = useRef<Record<string, PeerState>>({});
   const audioContainerRef = useRef<HTMLDivElement>(null);
@@ -108,25 +106,15 @@ export default function VoiceCallPanel({
       try { supabase.removeChannel(channelRef.current); } catch {}
       channelRef.current = null;
     }
-    if (ringHeartbeatRef.current) {
-      window.clearInterval(ringHeartbeatRef.current);
-      ringHeartbeatRef.current = null;
-    }
     if (ringChannelRef.current) {
-      const rc = ringChannelRef.current;
-      const cid = callIdRef.current;
       try {
-        if (cid) {
-          // Laisse le temps au signal d'annulation de partir avant de fermer le canal
-          rc.send({ type: "broadcast", event: "ring-cancel", payload: { callId: cid, from: userId } });
-          window.setTimeout(() => { try { supabase.removeChannel(rc); } catch { /* noop */ } }, 400);
-        } else {
-          supabase.removeChannel(rc);
+        if (callIdRef.current) {
+          ringChannelRef.current.send({ type: "broadcast", event: "ring-cancel", payload: { callId: callIdRef.current, from: userId } });
         }
-      } catch { /* noop */ }
+        supabase.removeChannel(ringChannelRef.current);
+      } catch {}
       ringChannelRef.current = null;
     }
-
     callIdRef.current = "";
     setParticipants([]);
     setSpeaking({});
@@ -285,23 +273,11 @@ export default function VoiceCallPanel({
             const iAmInitiator = room?.initiated_by === userId;
             const rc = supabase.channel("chatsup_voice_ring", { config: { broadcast: { self: false } } });
             ringChannelRef.current = rc;
-            rc.on("broadcast", { event: "call-declined" }, ({ payload }) => {
-              if (payload?.callId !== callId) return;
-              stopRingback();
-              if (ringHeartbeatRef.current) { window.clearInterval(ringHeartbeatRef.current); ringHeartbeatRef.current = null; }
-              toast.info("Appel refusé");
-            });
             rc.subscribe((st) => {
               if (st === "SUBSCRIBED" && iAmInitiator) {
-                const ring = () =>
-                  rc.send({ type: "broadcast", event: "ring", payload: { callId, from: userId } });
-                ring();
-                // Battement de cœur : le destinataire ferme l'appel entrant dès qu'il s'arrête
-                if (ringHeartbeatRef.current) window.clearInterval(ringHeartbeatRef.current);
-                ringHeartbeatRef.current = window.setInterval(ring, 3000);
+                rc.send({ type: "broadcast", event: "ring", payload: { callId, from: userId } });
               }
             });
-
           }
         });
     } catch (e: any) {

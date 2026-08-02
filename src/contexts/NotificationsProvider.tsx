@@ -32,8 +32,6 @@ export default function NotificationsProvider({ children }: { children: React.Re
   const unlockedRef = useRef(false);
   const lastPlayRef = useRef<Record<string, number>>({});
   const seenCallsRef = useRef<Set<string>>(new Set());
-  const lastRingRef = useRef<{ callId: string; at: number } | null>(null);
-
 
   // Débloque l'audio au premier geste utilisateur (politique d'autoplay)
   useEffect(() => {
@@ -75,28 +73,10 @@ export default function NotificationsProvider({ children }: { children: React.Re
     openPanel();
   }, [openPanel, stopRing]);
 
-  const declineCall = useCallback((c: IncomingCall) => {
+  const declineCall = useCallback((_c: IncomingCall) => {
     stopRing();
     setIncomingCall(null);
-    // Fast path: tell the caller immediately over the ring channel.
-    const ch = supabase.channel("chatsup_voice_ring", { config: { broadcast: { self: false } } });
-    ch.subscribe((st) => {
-      if (st === "SUBSCRIBED") {
-        ch.send({ type: "broadcast", event: "call-declined", payload: { callId: c.id, from: user?.id } });
-        window.setTimeout(() => { try { supabase.removeChannel(ch); } catch { /* noop */ } }, 300);
-      }
-    });
-    // Robust path: best-effort persisted trace so the caller sees it even if offline momentarily.
-    if (user) {
-      void supabase.from("notifications").insert({
-        title: "Appel refusé",
-        message: "L'appel a été refusé.",
-        target_user_id: c.callerId,
-        created_by: user.id,
-        is_global: false,
-      }).then(({ error }) => { if (error) console.warn("decline notify error", error); });
-    }
-  }, [stopRing, user]);
+  }, [stopRing]);
 
   const missedCall = useCallback(async (c: IncomingCall) => {
     stopRing();
@@ -106,25 +86,24 @@ export default function NotificationsProvider({ children }: { children: React.Re
     play("call");
     toast.custom(
       (id) => (
-        <div className="flex items-center gap-3 w-[300px] max-w-[88vw] rounded-2xl border border-white/10 bg-slate-950/85 backdrop-blur-xl shadow-[0_18px_40px_-16px_rgba(0,0,0,0.8)] px-3 py-2.5">
-          <div className="w-9 h-9 shrink-0 rounded-xl bg-rose-500/15 text-rose-300 flex items-center justify-center">
-            <PhoneMissed className="w-4.5 h-4.5" />
+        <div className="flex items-start gap-3 min-w-[280px] max-w-sm rounded-2xl border border-white/10 bg-slate-900/95 backdrop-blur-lg shadow-2xl p-3 pr-4">
+          <div className="w-10 h-10 shrink-0 rounded-xl bg-rose-500/20 text-rose-300 flex items-center justify-center">
+            <PhoneMissed className="w-5 h-5" />
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-[13px] font-semibold text-white truncate">Appel manqué</p>
-            <p className="text-[11px] text-slate-400 truncate">de {c.callerName}</p>
+            <p className="text-sm font-semibold text-white truncate">Appel manqué</p>
+            <p className="text-xs text-slate-300 truncate">de {c.callerName}</p>
+            <button
+              onClick={() => { toast.dismiss(id); openPanel(); }}
+              className="mt-2 text-[11px] font-semibold px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white transition"
+            >
+              Rappeler
+            </button>
           </div>
-          <button
-            onClick={() => { toast.dismiss(id); openPanel(); }}
-            className="shrink-0 text-[11px] font-semibold px-2.5 py-1.5 rounded-lg bg-emerald-600/90 hover:bg-emerald-500 text-white transition"
-          >
-            Rappeler
-          </button>
         </div>
       ),
-      { duration: 5000 }
+      { duration: 8000 }
     );
-
     // Persistent notification (visible on all screens through the global notifs stream)
     try {
       await supabase.from("notifications").insert({
@@ -150,7 +129,7 @@ export default function NotificationsProvider({ children }: { children: React.Re
       const kind: "text" | "voice" = isVoice ? "voice" : "text";
 
       const { data: prof } = await supabase
-        .from("public_profiles")
+        .from("profiles")
         .select("user_id,name,full_name,avatar_url")
         .eq("user_id", msg.user_id)
         .maybeSingle();
@@ -164,25 +143,33 @@ export default function NotificationsProvider({ children }: { children: React.Re
       const Icon = isVoice ? Mic : MessageCircle;
       toast.custom(
         (id) => (
-          <div
-            onClick={() => { toast.dismiss(id); navigate("/chat"); }}
-            className="cursor-pointer flex items-center gap-3 w-[300px] max-w-[88vw] rounded-2xl border border-white/10 bg-slate-950/85 backdrop-blur-xl shadow-[0_18px_40px_-16px_rgba(0,0,0,0.8)] px-3 py-2.5 transition hover:border-white/20"
-          >
-            <div className={`w-9 h-9 shrink-0 rounded-xl flex items-center justify-center ${isVoice ? "bg-emerald-500/15 text-emerald-300" : "bg-violet-500/15 text-violet-300"}`}>
-              <Icon className="w-4.5 h-4.5" />
+          <div className="flex items-start gap-3 min-w-[280px] max-w-sm rounded-2xl border border-white/10 bg-slate-900/95 backdrop-blur-lg shadow-2xl p-3 pr-4">
+            <div className={`w-10 h-10 shrink-0 rounded-xl flex items-center justify-center ${isVoice ? "bg-emerald-500/20 text-emerald-300" : "bg-violet-500/20 text-violet-300"}`}>
+              <Icon className="w-5 h-5" />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-[13px] font-semibold text-white truncate">{senderName}</p>
-              <p className="text-[11px] text-slate-400 truncate">
+              <p className="text-sm font-semibold text-white truncate">{senderName}</p>
+              <p className="text-xs text-slate-300 truncate">
                 {isVoice ? "🎤 Message vocal" : (msg.content || (msg.image_url ? "📷 Image" : "Nouveau message"))}
               </p>
+              <div className="mt-2 flex gap-2">
+                <button
+                  onClick={() => { toast.dismiss(id); navigate("/chat"); }}
+                  className="text-[11px] font-semibold px-2.5 py-1 rounded-lg bg-violet-600 hover:bg-violet-500 text-white transition"
+                >
+                  Ouvrir
+                </button>
+                <button
+                  onClick={() => toast.dismiss(id)}
+                  className="text-[11px] font-medium px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-white/80 transition"
+                >
+                  Ignorer
+                </button>
+              </div>
             </div>
-            <span className="shrink-0 text-[11px] font-semibold px-2.5 py-1.5 rounded-lg bg-violet-600/90 text-white">
-              Ouvrir
-            </span>
           </div>
         ),
-        { duration: 5000 }
+        { duration: 6000 }
       );
     };
 
@@ -194,23 +181,25 @@ export default function NotificationsProvider({ children }: { children: React.Re
       play("text");
       toast.custom(
         (id) => (
-          <div
-            onClick={() => toast.dismiss(id)}
-            className="cursor-pointer flex items-center gap-3 w-[300px] max-w-[88vw] rounded-2xl border border-white/10 bg-slate-950/85 backdrop-blur-xl shadow-[0_18px_40px_-16px_rgba(0,0,0,0.8)] px-3 py-2.5 transition hover:border-white/20"
-          >
-            <div className="w-9 h-9 shrink-0 rounded-xl bg-blue-500/15 text-blue-300 flex items-center justify-center">
-              <Bell className="w-4.5 h-4.5" />
+          <div className="flex items-start gap-3 min-w-[280px] max-w-sm rounded-2xl border border-white/10 bg-slate-900/95 backdrop-blur-lg shadow-2xl p-3 pr-4">
+            <div className="w-10 h-10 shrink-0 rounded-xl bg-blue-500/20 text-blue-300 flex items-center justify-center">
+              <Bell className="w-5 h-5" />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-[13px] font-semibold text-white truncate">{n.title}</p>
-              <p className="text-[11px] text-slate-400 line-clamp-2">{n.message}</p>
+              <p className="text-sm font-semibold text-white truncate">{n.title}</p>
+              <p className="text-xs text-slate-300 line-clamp-2">{n.message}</p>
+              <button
+                onClick={() => toast.dismiss(id)}
+                className="mt-2 text-[11px] font-medium px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-white/80 transition"
+              >
+                OK
+              </button>
             </div>
           </div>
         ),
-        { duration: 5000 }
+        { duration: 6000 }
       );
     };
-
 
     const dbChannel = supabase
       .channel(`global-notifs-${user.id}`)
@@ -218,36 +207,32 @@ export default function NotificationsProvider({ children }: { children: React.Re
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "notifications" }, handleNotification)
       .subscribe();
 
-    // Resolves caller profile then raises the incoming-call overlay, de-duplicated by call id.
-    const showIncomingCall = async (callId: string, callerId: string) => {
-      if (!callId || !callerId || callerId === user.id) return;
-      lastRingRef.current = { callId, at: Date.now() };
-      if (seenCallsRef.current.has(callId)) return;
-      seenCallsRef.current.add(callId);
-
-      const { data: prof } = await supabase
-        .from("public_profiles")
-        .select("user_id,name,full_name,avatar_url")
-        .eq("user_id", callerId)
-        .maybeSingle();
-      const p = prof as Profile | null;
-      const callerName = p?.full_name || p?.name || "Appel entrant";
-
-      play("call");
-      startRing();
-      setIncomingCall({
-        id: callId,
-        callerId,
-        callerName,
-        avatarUrl: p?.avatar_url ?? null,
-      });
-    };
-
-    // Fast path: voice call ring signaling via broadcast (no DB round-trip).
+    // Voice call ring signaling via broadcast (no DB table required)
     const ringChannel = supabase
       .channel("chatsup_voice_ring", { config: { broadcast: { self: false } } })
-      .on("broadcast", { event: "ring" }, ({ payload }) => {
-        void showIncomingCall(payload?.callId as string, payload?.from as string);
+      .on("broadcast", { event: "ring" }, async ({ payload }) => {
+        const callerId = payload?.from as string | undefined;
+        const callId = payload?.callId as string | undefined;
+        if (!callerId || !callId || callerId === user.id) return;
+        if (seenCallsRef.current.has(callId)) return;
+        seenCallsRef.current.add(callId);
+
+        const { data: prof } = await supabase
+          .from("profiles")
+          .select("user_id,name,full_name,avatar_url")
+          .eq("user_id", callerId)
+          .maybeSingle();
+        const p = prof as Profile | null;
+        const callerName = p?.full_name || p?.name || "Appel entrant";
+
+        play("call");
+        startRing();
+        setIncomingCall({
+          id: callId,
+          callerId,
+          callerName,
+          avatarUrl: p?.avatar_url ?? null,
+        });
       })
       .on("broadcast", { event: "ring-cancel" }, ({ payload }) => {
         const callId = payload?.callId as string | undefined;
@@ -259,58 +244,11 @@ export default function NotificationsProvider({ children }: { children: React.Re
       })
       .subscribe();
 
-    // Robust path: DB-backed fallback so a callee who joined late (or missed the
-    // broadcast) still gets notified. voice_calls rows use caller_id/callee_id;
-    // any freshly-created "active" row where we are not the caller is treated as a ring.
-    const dbCallChannel = supabase
-      .channel(`incoming-calls-db-${user.id}`)
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "voice_calls" },
-        (payload) => {
-          const row = payload.new as { id: string; caller_id: string; status: string; created_at: string };
-          if (!row || row.status !== "active") return;
-          if (row.caller_id === user.id) return;
-          if (Date.now() - new Date(row.created_at).getTime() > 60_000) return;
-          void showIncomingCall(row.id, row.caller_id);
-        }
-      )
-      .on(
-        "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "voice_calls" },
-        (payload) => {
-          const row = payload.new as { id: string; status: string };
-          if (!row) return;
-          if ((row.status === "ended" || row.status === "declined" || row.status === "missed") && incomingRef.current?.id === row.id) {
-            stopRing();
-            setIncomingCall(null);
-          }
-        }
-      )
-      .subscribe();
-
-    // Filet de sécurité : si l'appelant raccroche sans que l'annulation arrive,
-    // l'appel entrant disparaît dès que le battement de cœur s'interrompt.
-    const watchdog = window.setInterval(() => {
-      const current = incomingRef.current;
-      if (!current) return;
-      const last = lastRingRef.current;
-      if (!last || last.callId !== current.id) return;
-      if (Date.now() - last.at > 9000) {
-        stopRing();
-        setIncomingCall(null);
-      }
-    }, 2000);
-
-
     return () => {
-      window.clearInterval(watchdog);
       try { supabase.removeChannel(dbChannel); } catch {}
       try { supabase.removeChannel(ringChannel); } catch {}
-      try { supabase.removeChannel(dbCallChannel); } catch {}
       stopRing();
     };
-
   }, [user, play, startRing, stopRing, navigate]);
 
   const overlay = useMemo(

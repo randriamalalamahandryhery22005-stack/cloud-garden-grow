@@ -17,9 +17,7 @@ import AccountBadges from "@/components/AccountBadges";
 import UserProfileDialog from "@/components/UserProfileDialog";
 import CallHistoryDialog from "@/components/CallHistoryDialog";
 import { useAccountBadges } from "@/hooks/useAccountBadges";
-import { useGlobalChat, type ChatRow, type Profile } from "@/hooks/useGlobalChat";
 import { buildEditedContent, parseMessage } from "@/lib/chatMeta";
-import { uploadWithProgress } from "@/lib/uploadWithProgress";
 import {
   ArrowLeft,
   Send,
@@ -42,33 +40,51 @@ import {
   Pencil,
   History,
   PhoneCall,
-  WifiOff,
-  ChevronDown,
 } from "lucide-react";
 
-const AUDIO_RX = /\.(webm|ogg|mp3|m4a|wav|aac|flac|opus)(\?|$)/i;
+const AUDIO_RX = /\.(webm|ogg|mp3|m4a|wav|aac)(\?|$)/i;
 const IMAGE_RX = /\.(png|jpe?g|gif|webp|bmp|svg|heic|heif|avif)(\?|$)/i;
 const VIDEO_RX = /\.(mp4|mov|webm|mkv|m4v|3gp|avi)(\?|$)/i;
-const isAudioPath = (p?: string | null) => !!p && AUDIO_RX.test(p) && /voice-|\.(ogg|m4a|mp3|wav|aac|flac|opus)/i.test(p);
+const isAudioPath = (p?: string | null) => !!p && AUDIO_RX.test(p);
 const isImagePath = (p?: string | null) => !!p && IMAGE_RX.test(p);
-const isVideoPath = (p?: string | null) => !!p && VIDEO_RX.test(p) && !isAudioPath(p);
-
-/** Nom d'origine encodé dans le chemin : `<uid>/<ts>-<rand>-<nom.ext>`. */
+const isVideoPath = (p?: string | null) => !!p && VIDEO_RX.test(p);
 const fileNameFromPath = (p: string) => {
-  const raw = decodeURIComponent(p.split("/").pop() || p);
-  const stripped = raw.replace(/^\d{10,}-[a-z0-9]{4,10}-?/i, "");
-  return stripped || raw;
+  const raw = p.split("/").pop() || p;
+  return raw.replace(/^\d+-[a-z0-9]+\./i, (m) => m.split(".").slice(1).join("."));
 };
-const humanSize = (bytes: number) =>
-  bytes > 1024 * 1024 ? `${(bytes / (1024 * 1024)).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
-const sanitizeName = (name: string) =>
-  name
-    .normalize("NFKD")
-    .replace(/[^\w.\- ]+/g, "")
-    .replace(/\s+/g, "_")
-    .slice(-60) || "fichier";
-
 const MAX_FILE_MB = 100;
+
+
+type ChatRow = {
+  id: string;
+  user_id: string;
+  content: string;
+  image_url: string | null;
+  reply_to_id: string | null;
+  created_at: string;
+};
+
+type Profile = {
+  user_id: string;
+  name: string | null;
+  full_name: string | null;
+  avatar_url: string | null;
+};
+
+type Reaction = {
+  id: string;
+  message_id: string;
+  user_id: string;
+  emoji: string;
+};
+
+type ReadRow = {
+  message_id: string;
+  user_id: string;
+  read_at: string;
+};
+
+const SIGNED_TTL = 60 * 60 * 24 * 365;
 const EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🔥", "🎉", "🙏"];
 
 function initials(name?: string | null) {
@@ -77,15 +93,17 @@ function initials(name?: string | null) {
   return (parts[0]?.[0] || "") + (parts[1]?.[0] || "");
 }
 function formatTime(iso: string) {
-  return new Date(iso).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  const d = new Date(iso);
+  return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
 }
 function formatDay(iso: string) {
   const d = new Date(iso);
   const today = new Date();
-  const y = new Date();
-  y.setDate(y.getDate() - 1);
-  if (d.toDateString() === today.toDateString()) return "Aujourd'hui";
-  if (d.toDateString() === y.toDateString()) return "Hier";
+  const isToday = d.toDateString() === today.toDateString();
+  const y = new Date(); y.setDate(y.getDate() - 1);
+  const isYest = d.toDateString() === y.toDateString();
+  if (isToday) return "Aujourd'hui";
+  if (isYest) return "Hier";
   return d.toLocaleDateString();
 }
 
@@ -93,24 +111,14 @@ export default function Chat() {
   const { user, isAdmin } = useAuth();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { admins, premium } = useAccountBadges();
-
-  const {
-    messages,
-    profiles,
-    reactions,
-    reads,
-    onlineIds,
-    signedUrls,
-    loading,
-    connected,
-    ingest,
-    onNewMessage,
-  } = useGlobalChat(user?.id ?? null);
-
+  const [messages, setMessages] = useState<ChatRow[]>([]);
+  const [profiles, setProfiles] = useState<Record<string, Profile>>({});
+  const [onlineIds, setOnlineIds] = useState<Set<string>>(new Set());
+  const [reactions, setReactions] = useState<Reaction[]>([]);
+  const [reads, setReads] = useState<ReadRow[]>([]);
+  const [loading, setLoading] = useState(true);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
-  const [uploadPct, setUploadPct] = useState<number | null>(null);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [replyTo, setReplyTo] = useState<ChatRow | null>(null);
@@ -124,13 +132,12 @@ export default function Chat() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
   const [originalFor, setOriginalFor] = useState<ChatRow | null>(null);
-  const [voiceActive, setVoiceActive] = useState(false);
+  const { admins, premium } = useAccountBadges();
 
   const { openPanel: openCallPanel } = useCall();
-  const setCallOpen = (v: boolean) => {
-    if (v) openCallPanel();
-  };
+  const setCallOpen = (v: boolean) => { if (v) openCallPanel(); };
 
+  // Auto-open call panel when arriving with ?call=1 (from incoming call accept)
   useEffect(() => {
     if (searchParams.get("call") === "1") {
       openCallPanel();
@@ -140,131 +147,200 @@ export default function Chat() {
     }
   }, [searchParams, setSearchParams, openCallPanel]);
 
+
+  const [voiceActive, setVoiceActive] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
-  const atBottomRef = useRef(true);
-  atBottomRef.current = atBottom;
 
   const scrollToBottom = useCallback((smooth = true) => {
     bottomRef.current?.scrollIntoView({ behavior: smooth ? "smooth" : "auto" });
   }, []);
 
-  // Arrivée d'un message : suivre le fil ou signaler les non-lus.
-  useEffect(() => {
-    onNewMessage.current = (row: ChatRow) => {
-      if (row.user_id === user?.id || atBottomRef.current) {
-        window.setTimeout(() => scrollToBottom(true), 40);
-      } else {
-        setUnreadCount((c) => c + 1);
-      }
-    };
-    return () => {
-      onNewMessage.current = null;
-    };
-  }, [onNewMessage, scrollToBottom, user?.id]);
-
-  const firstPaint = useRef(true);
-  useEffect(() => {
-    if (!loading && firstPaint.current && messages.length > 0) {
-      firstPaint.current = false;
-      window.setTimeout(() => scrollToBottom(false), 60);
+  const loadProfiles = useCallback(async (ids: string[]) => {
+    const missing = Array.from(new Set(ids)).filter((id) => !profiles[id]);
+    if (missing.length === 0) return;
+    const { data } = await supabase
+      .from("profiles")
+      .select("user_id, name, full_name, avatar_url")
+      .in("user_id", missing);
+    if (data) {
+      setProfiles((prev) => {
+        const next = { ...prev };
+        for (const p of data as Profile[]) next[p.user_id] = p;
+        return next;
+      });
     }
-  }, [loading, messages.length, scrollToBottom]);
+  }, [profiles]);
+
+  const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
+  const resolveImage = useCallback(async (path: string) => {
+    if (!path) return;
+    if (signedUrls[path]) return;
+    if (path.startsWith("http")) {
+      setSignedUrls((s) => ({ ...s, [path]: path }));
+      return;
+    }
+    const { data } = await supabase.storage.from("chat-files").createSignedUrl(path, SIGNED_TTL);
+    if (data?.signedUrl) setSignedUrls((s) => ({ ...s, [path]: data.signedUrl }));
+  }, [signedUrls]);
+
+  // Initial load
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      const [msgRes, reactRes, readRes] = await Promise.all([
+        supabase.from("global_chat_messages").select("*").order("created_at", { ascending: true }).limit(300),
+        supabase.from("chat_message_reactions").select("*"),
+        supabase.from("chat_message_reads").select("message_id,user_id,read_at"),
+      ]);
+      if (cancelled) return;
+      if (msgRes.error) {
+        toast.error("Impossible de charger le chat");
+        setLoading(false);
+        return;
+      }
+      const rows = (msgRes.data || []) as ChatRow[];
+      setMessages(rows);
+      setReactions((reactRes.data || []) as Reaction[]);
+      setReads((readRes.data || []) as ReadRow[]);
+      await loadProfiles(rows.map((m) => m.user_id));
+      rows.forEach((m) => m.image_url && resolveImage(m.image_url));
+      setLoading(false);
+      setTimeout(() => scrollToBottom(false), 50);
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Realtime
+  useEffect(() => {
+    const channel = supabase
+      .channel("global_chat_v2")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "global_chat_messages" }, async (payload) => {
+        const row = payload.new as ChatRow;
+        setMessages((prev) => (prev.some((m) => m.id === row.id) ? prev : [...prev, row]));
+        loadProfiles([row.user_id]);
+        if (row.image_url) resolveImage(row.image_url);
+        if (!atBottom && row.user_id !== user?.id) setUnreadCount((c) => c + 1);
+        else setTimeout(() => scrollToBottom(true), 30);
+      })
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "global_chat_messages" }, (payload) => {
+        const row = payload.new as ChatRow;
+        setMessages((prev) => prev.map((m) => (m.id === row.id ? { ...m, ...row } : m)));
+      })
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "global_chat_messages" }, (payload) => {
+        const oldRow = payload.old as { id: string };
+        setMessages((prev) => prev.filter((m) => m.id !== oldRow.id));
+      })
+
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "chat_message_reactions" }, (payload) => {
+        const r = payload.new as Reaction;
+        setReactions((prev) => (prev.some((x) => x.id === r.id) ? prev : [...prev, r]));
+      })
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "chat_message_reactions" }, (payload) => {
+        const r = payload.old as { id: string };
+        setReactions((prev) => prev.filter((x) => x.id !== r.id));
+      })
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "chat_message_reads" }, (payload) => {
+        const r = payload.new as ReadRow;
+        setReads((prev) =>
+          prev.some((x) => x.message_id === r.message_id && x.user_id === r.user_id) ? prev : [...prev, r]
+        );
+        loadProfiles([r.user_id]);
+      })
+      .subscribe();
+
+    async function fetchOnline() {
+      const { data } = await supabase.from("online_users").select("user_id");
+      if (data) setOnlineIds(new Set((data as { user_id: string }[]).map((u) => u.user_id)));
+    }
+    const onlineChannel = supabase
+      .channel("chat_online_v2")
+      .on("postgres_changes", { event: "*", schema: "public", table: "online_users" }, fetchOnline)
+      .subscribe();
+    fetchOnline();
+
+    return () => {
+      supabase.removeChannel(channel);
+      supabase.removeChannel(onlineChannel);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [atBottom, user?.id, loadProfiles, resolveImage, scrollToBottom]);
+
+  // Auto-mark messages as read (visible + not own)
+  useEffect(() => {
+    if (!user) return;
+    const toMark = messages.filter(
+      (m) =>
+        m.user_id !== user.id &&
+        !reads.some((r) => r.message_id === m.id && r.user_id === user.id)
+    );
+    if (toMark.length === 0) return;
+    const rowsToInsert = toMark.map((m) => ({ message_id: m.id, user_id: user.id }));
+    supabase.from("chat_message_reads").insert(rowsToInsert).then(({ error }) => {
+      if (!error) {
+        setReads((prev) => [
+          ...prev,
+          ...toMark.map((m) => ({ message_id: m.id, user_id: user.id, read_at: new Date().toISOString() })),
+        ]);
+      }
+    });
+  }, [messages, user, reads]);
 
   const onScroll = () => {
     const el = scrollRef.current;
     if (!el) return;
-    const near = el.scrollHeight - el.scrollTop - el.clientHeight < 140;
+    const near = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
     setAtBottom(near);
     if (near) setUnreadCount(0);
   };
 
   const handleImagePick = (f: File | null) => {
-    if (!f) {
-      setImageFile(null);
-      setImagePreview(null);
-      return;
-    }
-    if (f.size > MAX_FILE_MB * 1024 * 1024) {
-      toast.error(`Fichier trop volumineux (max ${MAX_FILE_MB} MB)`);
-      return;
-    }
+    if (!f) { setImageFile(null); setImagePreview(null); return; }
+    if (f.size > MAX_FILE_MB * 1024 * 1024) { toast.error(`Fichier trop volumineux (max ${MAX_FILE_MB}MB)`); return; }
     setImageFile(f);
-    setImagePreview(f.type.startsWith("image/") ? URL.createObjectURL(f) : null);
+    if (f.type.startsWith("image/")) setImagePreview(URL.createObjectURL(f));
+    else setImagePreview(null);
   };
 
   const send = async () => {
-    if (!user || sending) return;
+    if (!user) return;
     const text = input.trim();
     if (!text && !imageFile) return;
     setSending(true);
     try {
-      let storagePath: string | null = null;
+      let imagePath: string | null = null;
       if (imageFile) {
-        const stamp = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-        const path = `${user.id}/${stamp}-${sanitizeName(imageFile.name)}`;
-        setUploadPct(0);
-        await uploadWithProgress("chat-files", path, imageFile, {
-          contentType: imageFile.type || "application/octet-stream",
-          onProgress: setUploadPct,
-        });
-        storagePath = path;
+        const rawName = imageFile.name || "fichier";
+        const hasExt = /\.[a-z0-9]{1,8}$/i.test(rawName);
+        const ext = hasExt ? rawName.split(".").pop()! : (imageFile.type.split("/")[1] || "bin");
+        const safeName = rawName.replace(/[^\w.\-]+/g, "_");
+        const path = `${user.id}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${safeName}${hasExt ? "" : `.${ext}`}`;
+
+        const { error: upErr } = await supabase.storage
+          .from("chat-files")
+          .upload(path, imageFile, { contentType: imageFile.type || "application/octet-stream", upsert: false });
+        if (upErr) throw upErr;
+        imagePath = path;
       }
-      const { data, error } = await supabase
-        .from("global_chat_messages")
-        .insert({
-          user_id: user.id,
-          content: text,
-          image_url: storagePath,
-          reply_to_id: replyTo?.id ?? null,
-        })
-        .select()
-        .single();
+      const { error } = await supabase.from("global_chat_messages").insert({
+        user_id: user.id,
+        content: text,
+        image_url: imagePath,
+        reply_to_id: replyTo?.id ?? null,
+      });
       if (error) throw error;
-      if (data) ingest([data as ChatRow]);
       setInput("");
       setImageFile(null);
       setImagePreview(null);
       setReplyTo(null);
-      window.setTimeout(() => scrollToBottom(true), 40);
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : "";
-      toast.error(msg ? `Échec de l'envoi : ${msg}` : "Échec de l'envoi");
+      setTimeout(() => scrollToBottom(true), 30);
+    } catch (e) {
+      toast.error("Échec de l'envoi");
       console.error(e);
     } finally {
       setSending(false);
-      setUploadPct(null);
-    }
-  };
-
-  const sendVoice = async (blob: Blob, durationMs: number) => {
-    if (!user) return;
-    try {
-      const path = `${user.id}/voice-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.webm`;
-      setUploadPct(0);
-      await uploadWithProgress("chat-files", path, blob, {
-        contentType: blob.type || "audio/webm",
-        onProgress: setUploadPct,
-      });
-      const { data, error } = await supabase
-        .from("global_chat_messages")
-        .insert({
-          user_id: user.id,
-          content: `🎤 Message vocal · ${Math.max(1, Math.round(durationMs / 1000))}s`,
-          image_url: path,
-          reply_to_id: replyTo?.id ?? null,
-        })
-        .select()
-        .single();
-      if (error) throw error;
-      if (data) ingest([data as ChatRow]);
-      setReplyTo(null);
-      window.setTimeout(() => scrollToBottom(true), 40);
-    } catch (e) {
-      console.error(e);
-      toast.error("Échec de l'envoi vocal");
-    } finally {
-      setUploadPct(null);
     }
   };
 
@@ -281,53 +357,69 @@ export default function Chat() {
   const saveEdit = async (m: ChatRow) => {
     const next = editText.trim();
     const parsed = parseMessage(m.content);
-    if (!next || next === parsed.text) {
-      setEditingId(null);
-      return;
-    }
-    const content = buildEditedContent(next, parsed.original ?? parsed.text);
-    const { data, error } = await supabase
-      .from("global_chat_messages")
-      .update({ content })
-      .eq("id", m.id)
-      .select()
-      .single();
-    if (error) {
-      toast.error("Modification impossible");
-      return;
-    }
-    if (data) ingest([data as ChatRow]);
+    if (!next || next === parsed.text) { setEditingId(null); return; }
+    const original = parsed.original ?? parsed.text;
+    const content = buildEditedContent(next, original);
+    const { error } = await supabase.from("global_chat_messages").update({ content }).eq("id", m.id);
+    if (error) { toast.error("Modification impossible"); return; }
+    setMessages((prev) => prev.map((x) => (x.id === m.id ? { ...x, content } : x)));
     setEditingId(null);
+  };
+
+
+  const sendVoice = async (blob: Blob, durationMs: number) => {
+    if (!user) return;
+    try {
+      const mime = blob.type || "audio/webm";
+      const ext = /mp4|m4a|aac/i.test(mime) ? "m4a" : /ogg/i.test(mime) ? "ogg" : /mpeg|mp3/i.test(mime) ? "mp3" : "webm";
+      const path = `${user.id}/voice-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+      const { error: upErr } = await supabase.storage
+        .from("chat-files")
+        .upload(path, blob, { contentType: mime, upsert: false });
+      if (upErr) throw upErr;
+
+      const { error } = await supabase.from("global_chat_messages").insert({
+        user_id: user.id,
+        content: `🎤 Message vocal · ${Math.max(1, Math.round(durationMs / 1000))}s`,
+        image_url: path,
+        reply_to_id: replyTo?.id ?? null,
+      });
+      if (error) throw error;
+      setReplyTo(null);
+      setTimeout(() => scrollToBottom(true), 30);
+    } catch (e) {
+      console.error(e);
+      toast.error("Échec de l'envoi vocal");
+    }
   };
 
   const toggleReaction = async (messageId: string, emoji: string) => {
     if (!user) return;
-    const existing = reactions.find(
-      (r) => r.message_id === messageId && r.user_id === user.id && r.emoji === emoji,
-    );
+    const existing = reactions.find((r) => r.message_id === messageId && r.user_id === user.id && r.emoji === emoji);
     if (existing) {
       const { error } = await supabase.from("chat_message_reactions").delete().eq("id", existing.id);
       if (error) toast.error("Impossible de retirer la réaction");
     } else {
-      const { error } = await supabase
-        .from("chat_message_reactions")
-        .insert({ message_id: messageId, user_id: user.id, emoji });
+      const { error } = await supabase.from("chat_message_reactions").insert({
+        message_id: messageId,
+        user_id: user.id,
+        emoji,
+      });
       if (error) toast.error("Impossible d'ajouter la réaction");
     }
     setEmojiPickerFor(null);
   };
 
-  /* --------------------------- Dérivés d'affichage --------------------------- */
+  // Tous les messages du chat global sont visibles (l'historique ne doit pas
+  // disparaître lorsqu'un auteur se déconnecte).
+  const visible = messages;
+
 
   const filtered = useMemo(() => {
-    if (!search.trim()) return messages;
+    if (!search.trim()) return visible;
     const q = search.toLowerCase();
-    return messages.filter(
-      (m) =>
-        parseMessage(m.content).text.toLowerCase().includes(q) ||
-        (m.image_url ? fileNameFromPath(m.image_url).toLowerCase().includes(q) : false),
-    );
-  }, [messages, search]);
+    return visible.filter((m) => parseMessage(m.content).text.toLowerCase().includes(q));
+  }, [visible, search]);
 
   const grouped = useMemo(() => {
     const out: Array<{ day: string; items: ChatRow[] }> = [];
@@ -349,7 +441,7 @@ export default function Chat() {
   const displayName = (p?: Profile) => p?.full_name || p?.name || "Joueur";
 
   const reactionsByMsg = useMemo(() => {
-    const m: Record<string, Record<string, typeof reactions>> = {};
+    const m: Record<string, Record<string, Reaction[]>> = {};
     for (const r of reactions) {
       m[r.message_id] ??= {};
       m[r.message_id][r.emoji] ??= [];
@@ -359,7 +451,7 @@ export default function Chat() {
   }, [reactions]);
 
   const readsByMsg = useMemo(() => {
-    const m: Record<string, typeof reads> = {};
+    const m: Record<string, ReadRow[]> = {};
     for (const r of reads) {
       m[r.message_id] ??= [];
       m[r.message_id].push(r);
@@ -376,31 +468,16 @@ export default function Chat() {
         style={{ background: "linear-gradient(180deg, rgba(15,23,42,0.9), rgba(15,23,42,0.75))" }}
       >
         <div className="max-w-2xl mx-auto px-3 py-3 flex items-center gap-2">
-          <button
-            onClick={() => navigate(-1)}
-            className="w-9 h-9 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center"
-            aria-label="Retour"
-          >
+          <button onClick={() => navigate(-1)} className="w-9 h-9 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center" aria-label="Retour">
             <ArrowLeft className="w-4 h-4" />
           </button>
           <div className="w-9 h-9 rounded-full bg-gradient-to-br from-amber-500 to-emerald-500 flex items-center justify-center">
             <MessageCircle className="w-4 h-4 text-white" />
           </div>
           <div className="flex-1 min-w-0">
-            <h1 className="text-[15px] font-semibold leading-tight">J&amp;H Chats</h1>
-            <p className="text-[11px] text-slate-400 flex items-center gap-1.5">
-              {connected ? (
-                <>
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  Temps réel · {onlineIds.size} en ligne
-                </>
-              ) : (
-                <>
-                  <WifiOff className="w-3 h-3 text-amber-400" /> Reconnexion…
-                </>
-              )}
-              <span className="text-slate-600">·</span>
-              <span>{messages.length} messages</span>
+            <h1 className="text-[15px] font-semibold leading-tight">J&H Chats</h1>
+            <p className="text-[11px] text-slate-400">
+              {onlineIds.size} en ligne · Utilisateurs en ligne uniquement
             </p>
           </div>
           <button
@@ -411,6 +488,7 @@ export default function Chat() {
           >
             <PhoneCall className="w-4 h-4 text-emerald-300" />
           </button>
+
         </div>
 
         <div className="max-w-2xl mx-auto px-3 pb-3">
@@ -419,7 +497,7 @@ export default function Chat() {
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Rechercher un message ou un fichier..."
+              placeholder="Rechercher un message..."
               className="w-full pl-9 pr-3 h-9 rounded-xl bg-white/5 border border-white/10 text-sm placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500/40"
             />
           </div>
@@ -434,17 +512,13 @@ export default function Chat() {
             </div>
           ) : grouped.length === 0 ? (
             <div className="text-center py-16 text-slate-400 text-sm">
-              {search.trim()
-                ? "Aucun message ne correspond à votre recherche."
-                : "Aucun message pour l'instant. Soyez le premier à écrire !"}
+              {search.trim() ? "Aucun message ne correspond à votre recherche." : "Aucun message pour l'instant. Soyez le premier à écrire !"}
             </div>
           ) : (
             grouped.map((g) => (
               <div key={g.day} className="space-y-2">
                 <div className="flex justify-center">
-                  <span className="text-[10px] uppercase tracking-widest text-slate-500 bg-white/5 px-3 py-1 rounded-full">
-                    {g.day}
-                  </span>
+                  <span className="text-[10px] uppercase tracking-widest text-slate-500 bg-white/5 px-3 py-1 rounded-full">{g.day}</span>
                 </div>
                 {g.items.map((m) => {
                   const mine = m.user_id === user?.id;
@@ -457,14 +531,9 @@ export default function Chat() {
                   const msgReads = readsByMsg[m.id] || [];
                   const readCount = msgReads.filter((r) => r.user_id !== m.user_id).length;
                   const parsed = parseMessage(m.content);
-                  const pendingAttachment = !!m.image_url && !imgUrl;
 
                   return (
-                    <div
-                      key={m.id}
-                      className={`flex gap-2 group ${mine ? "flex-row-reverse" : ""}`}
-                      style={{ animation: "chat-in 0.25s ease-out" }}
-                    >
+                    <div key={m.id} className={`flex gap-2 group ${mine ? "flex-row-reverse" : ""}`} style={{ animation: "chat-in 0.25s ease-out" }}>
                       <div className="relative shrink-0">
                         <button
                           onClick={() => setProfileFor(m.user_id)}
@@ -472,20 +541,12 @@ export default function Chat() {
                           title="Voir le profil"
                         >
                           {p?.avatar_url ? (
-                            <img
-                              src={p.avatar_url}
-                              alt=""
-                              className="w-full h-full object-cover"
-                              referrerPolicy="no-referrer"
-                              onError={(e) => ((e.currentTarget as HTMLImageElement).style.display = "none")}
-                            />
+                            <img src={p.avatar_url} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" onError={(e) => ((e.currentTarget as HTMLImageElement).style.display = "none")} />
                           ) : (
                             <span className="text-[11px] font-bold uppercase">{initials(displayName(p))}</span>
                           )}
                         </button>
-                        {online && (
-                          <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-slate-950" />
-                        )}
+                        {online && <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-slate-950" />}
                       </div>
                       <div className={`max-w-[78%] flex flex-col ${mine ? "items-end" : "items-start"}`}>
                         <div className={`flex items-center gap-2 text-[11px] mb-1 ${mine ? "flex-row-reverse" : ""}`}>
@@ -501,30 +562,15 @@ export default function Chat() {
 
                         <div
                           className={`relative px-3 py-2 rounded-2xl text-[14px] leading-snug break-words shadow ${
-                            mine
-                              ? "bg-gradient-to-br from-amber-600 to-emerald-600 text-white rounded-tr-sm"
-                              : "bg-white/[0.06] border border-white/10 text-slate-100 rounded-tl-sm"
+                            mine ? "bg-gradient-to-br from-amber-600 to-emerald-600 text-white rounded-tr-sm" : "bg-white/[0.06] border border-white/10 text-slate-100 rounded-tl-sm"
                           }`}
                         >
                           {reply && (
-                            <div
-                              className={`mb-1.5 px-2 py-1 rounded-lg text-[11px] border-l-2 ${
-                                mine ? "bg-white/10 border-white/40" : "bg-black/20 border-amber-400"
-                              }`}
-                            >
+                            <div className={`mb-1.5 px-2 py-1 rounded-lg text-[11px] border-l-2 ${mine ? "bg-white/10 border-white/40" : "bg-black/20 border-amber-400"}`}>
                               <div className="font-semibold opacity-80 truncate">
                                 {reply.user_id === user?.id ? "Vous" : displayName(replyAuthor ?? undefined)}
                               </div>
-                              <div className="opacity-70 truncate">
-                                {parseMessage(reply.content).text || (reply.image_url ? "📎 Pièce jointe" : "")}
-                              </div>
-                            </div>
-                          )}
-
-                          {pendingAttachment && (
-                            <div className="flex items-center gap-2 mb-1 px-2.5 py-2 rounded-xl bg-black/20 border border-white/10 text-[12px]">
-                              <Loader2 className="w-4 h-4 animate-spin opacity-80" />
-                              Chargement de la pièce jointe…
+                              <div className="opacity-70 truncate">{parseMessage(reply.content).text || (reply.image_url ? "📷 Pièce jointe" : "")}</div>
                             </div>
                           )}
                           {imgUrl && isAudioPath(m.image_url) && (
@@ -532,44 +578,25 @@ export default function Chat() {
                           )}
                           {imgUrl && isImagePath(m.image_url) && (
                             <a href={imgUrl} target="_blank" rel="noreferrer" className="block mb-1">
-                              <img
-                                src={imgUrl}
-                                alt="pièce jointe"
-                                loading="lazy"
-                                className="rounded-xl max-h-64 object-cover"
-                              />
+                              <img src={imgUrl} alt="pièce jointe" className="rounded-xl max-h-64 object-cover" />
                             </a>
                           )}
                           {imgUrl && isVideoPath(m.image_url) && (
-                            <video
-                              src={imgUrl}
-                              controls
-                              playsInline
-                              preload="metadata"
-                              className="rounded-xl max-h-64 mb-1 bg-black"
-                            />
+                            <video src={imgUrl} controls playsInline className="rounded-xl max-h-64 mb-1 bg-black" />
                           )}
-                          {imgUrl &&
-                            !isAudioPath(m.image_url) &&
-                            !isImagePath(m.image_url) &&
-                            !isVideoPath(m.image_url) && (
-                              <a
-                                href={imgUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                download={fileNameFromPath(m.image_url!)}
-                                className={`flex items-center gap-2 mb-1 px-2.5 py-2 rounded-xl border ${
-                                  mine ? "bg-white/15 border-white/25" : "bg-black/20 border-white/10"
-                                }`}
-                              >
-                                <FileText className="w-5 h-5 shrink-0 opacity-80" />
-                                <span className="flex-1 min-w-0 text-[12px] font-medium truncate">
-                                  {fileNameFromPath(m.image_url!)}
-                                </span>
-                                <Download className="w-4 h-4 shrink-0 opacity-80" />
-                              </a>
-                            )}
-
+                          {imgUrl && !isAudioPath(m.image_url) && !isImagePath(m.image_url) && !isVideoPath(m.image_url) && (
+                            <a
+                              href={imgUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              download
+                              className={`flex items-center gap-2 mb-1 px-2.5 py-2 rounded-xl border ${mine ? "bg-white/15 border-white/25" : "bg-black/20 border-white/10"}`}
+                            >
+                              <FileText className="w-5 h-5 shrink-0 opacity-80" />
+                              <span className="flex-1 min-w-0 text-[12px] font-medium truncate">{fileNameFromPath(m.image_url!)}</span>
+                              <Download className="w-4 h-4 shrink-0 opacity-80" />
+                            </a>
+                          )}
                           {editingId === m.id ? (
                             <div className="space-y-1.5">
                               <textarea
@@ -579,28 +606,14 @@ export default function Chat() {
                                 className="w-full min-w-[200px] resize-none rounded-xl bg-black/30 border border-white/20 px-2 py-1.5 text-[13px] text-white focus:outline-none"
                               />
                               <div className="flex gap-2 justify-end">
-                                <button
-                                  onClick={() => setEditingId(null)}
-                                  className="text-[11px] px-2 py-1 rounded-lg bg-white/10"
-                                >
-                                  Annuler
-                                </button>
-                                <button
-                                  onClick={() => saveEdit(m)}
-                                  className="text-[11px] px-2 py-1 rounded-lg bg-emerald-600 text-white font-semibold"
-                                >
-                                  Enregistrer
-                                </button>
+                                <button onClick={() => setEditingId(null)} className="text-[11px] px-2 py-1 rounded-lg bg-white/10">Annuler</button>
+                                <button onClick={() => saveEdit(m)} className="text-[11px] px-2 py-1 rounded-lg bg-emerald-600 text-white font-semibold">Enregistrer</button>
                               </div>
                             </div>
                           ) : (
                             <>
-                              {parsed.text && !isAudioPath(m.image_url) && (
-                                <div className="whitespace-pre-wrap">{parsed.text}</div>
-                              )}
-                              {parsed.text && isAudioPath(m.image_url) && (
-                                <div className="text-[11px] opacity-70 mt-0.5">{parsed.text}</div>
-                              )}
+                              {parsed.text && !isAudioPath(m.image_url) && <div className="whitespace-pre-wrap">{parsed.text}</div>}
+                              {parsed.text && isAudioPath(m.image_url) && <div className="text-[11px] opacity-70 mt-0.5">{parsed.text}</div>}
                               {parsed.editedAt && (
                                 <button
                                   onClick={() => setOriginalFor(m)}
@@ -612,8 +625,10 @@ export default function Chat() {
                               )}
                             </>
                           )}
+
                         </div>
 
+                        {/* Reactions */}
                         {Object.keys(msgReactions).length > 0 && (
                           <div className={`flex flex-wrap gap-1 mt-1 ${mine ? "justify-end" : ""}`}>
                             {Object.entries(msgReactions).map(([emoji, list]) => {
@@ -623,9 +638,7 @@ export default function Chat() {
                                   key={emoji}
                                   onClick={() => toggleReaction(m.id, emoji)}
                                   className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] border transition ${
-                                    active
-                                      ? "bg-amber-500/30 border-amber-400/60 text-white"
-                                      : "bg-white/5 border-white/10 text-slate-200 hover:bg-white/10"
+                                    active ? "bg-amber-500/30 border-amber-400/60 text-white" : "bg-white/5 border-white/10 text-slate-200 hover:bg-white/10"
                                   }`}
                                 >
                                   <span>{emoji}</span>
@@ -636,6 +649,7 @@ export default function Chat() {
                           </div>
                         )}
 
+                        {/* Actions + read receipts */}
                         <div className={`flex items-center gap-1 mt-1 flex-wrap ${mine ? "flex-row-reverse" : ""}`}>
                           <div className="relative">
                             <button
@@ -647,57 +661,35 @@ export default function Chat() {
                             {emojiPickerFor === m.id && (
                               <div className="absolute z-40 mt-1 p-1.5 rounded-xl bg-slate-800 border border-white/10 shadow-xl flex gap-1">
                                 {EMOJIS.map((e) => (
-                                  <button
-                                    key={e}
-                                    onClick={() => toggleReaction(m.id, e)}
-                                    className="w-7 h-7 rounded-lg hover:bg-white/10 text-base"
-                                  >
+                                  <button key={e} onClick={() => toggleReaction(m.id, e)} className="w-7 h-7 rounded-lg hover:bg-white/10 text-base">
                                     {e}
                                   </button>
                                 ))}
                               </div>
                             )}
                           </div>
-                          <button
-                            onClick={() => setReplyTo(m)}
-                            className="text-[10px] text-slate-400 hover:text-white px-2 py-0.5 rounded-full bg-white/5 hover:bg-white/10 inline-flex items-center gap-1"
-                          >
+                          <button onClick={() => setReplyTo(m)} className="text-[10px] text-slate-400 hover:text-white px-2 py-0.5 rounded-full bg-white/5 hover:bg-white/10 inline-flex items-center gap-1">
                             <Reply className="w-3 h-3" /> Répondre
                           </button>
                           {mine && !isAudioPath(m.image_url) && (
-                            <button
-                              onClick={() => startEdit(m)}
-                              className="text-[10px] text-slate-300 hover:text-white px-2 py-0.5 rounded-full bg-white/5 hover:bg-white/10 inline-flex items-center gap-1"
-                            >
+                            <button onClick={() => startEdit(m)} className="text-[10px] text-slate-300 hover:text-white px-2 py-0.5 rounded-full bg-white/5 hover:bg-white/10 inline-flex items-center gap-1">
                               <Pencil className="w-3 h-3" /> Modifier
                             </button>
                           )}
+
                           {mine && (
-                            <button
-                              onClick={() => setViewersFor(m)}
-                              className="text-[10px] text-slate-300 hover:text-white px-2 py-0.5 rounded-full bg-white/5 hover:bg-white/10 inline-flex items-center gap-1"
-                            >
-                              {readCount > 0 ? (
-                                <CheckCheck className="w-3 h-3 text-emerald-400" />
-                              ) : (
-                                <Check className="w-3 h-3" />
-                              )}
+                            <button onClick={() => setViewersFor(m)} className="text-[10px] text-slate-300 hover:text-white px-2 py-0.5 rounded-full bg-white/5 hover:bg-white/10 inline-flex items-center gap-1">
+                              {readCount > 0 ? <CheckCheck className="w-3 h-3 text-emerald-400" /> : <Check className="w-3 h-3" />}
                               Vu · {readCount}
                             </button>
                           )}
                           {!mine && (
-                            <button
-                              onClick={() => setViewersFor(m)}
-                              className="text-[10px] text-slate-400 hover:text-white px-2 py-0.5 rounded-full bg-white/5 hover:bg-white/10 inline-flex items-center gap-1"
-                            >
+                            <button onClick={() => setViewersFor(m)} className="text-[10px] text-slate-400 hover:text-white px-2 py-0.5 rounded-full bg-white/5 hover:bg-white/10 inline-flex items-center gap-1">
                               <Eye className="w-3 h-3" /> {readCount}
                             </button>
                           )}
                           {(mine || isAdmin) && (
-                            <button
-                              onClick={() => deleteMessage(m.id)}
-                              className="text-[10px] text-amber-300 hover:text-white px-2 py-0.5 rounded-full bg-amber-500/10 hover:bg-amber-500/20 inline-flex items-center gap-1"
-                            >
+                            <button onClick={() => deleteMessage(m.id)} className="text-[10px] text-amber-300 hover:text-white px-2 py-0.5 rounded-full bg-amber-500/10 hover:bg-amber-500/20 inline-flex items-center gap-1">
                               <Trash2 className="w-3 h-3" /> {isAdmin && !mine ? "Admin" : "Supprimer"}
                             </button>
                           )}
@@ -713,28 +705,15 @@ export default function Chat() {
         </div>
       </div>
 
-      {(unreadCount > 0 || !atBottom) && (
-        <button
-          onClick={() => {
-            scrollToBottom(true);
-            setUnreadCount(0);
-          }}
-          className="fixed left-1/2 -translate-x-1/2 z-40"
-          style={{ bottom: "180px" }}
-        >
+      {unreadCount > 0 && (
+        <button onClick={() => { scrollToBottom(true); setUnreadCount(0); }} className="fixed left-1/2 -translate-x-1/2 z-40" style={{ bottom: "180px" }}>
           <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-600 text-white text-xs font-semibold shadow-lg">
-            {unreadCount > 0
-              ? `${unreadCount} nouveau${unreadCount > 1 ? "x" : ""} message${unreadCount > 1 ? "s" : ""}`
-              : "Revenir en bas"}
-            <ChevronDown className="w-3.5 h-3.5" />
+            {unreadCount} nouveau{unreadCount > 1 ? "x" : ""} message{unreadCount > 1 ? "s" : ""} ↓
           </span>
         </button>
       )}
 
-      <div
-        className="fixed left-0 right-0 z-30 border-t border-white/10 backdrop-blur-xl"
-        style={{ bottom: "72px", background: "linear-gradient(180deg, rgba(15,23,42,0.85), rgba(15,23,42,0.98))" }}
-      >
+      <div className="fixed left-0 right-0 z-30 border-t border-white/10 backdrop-blur-xl" style={{ bottom: "72px", background: "linear-gradient(180deg, rgba(15,23,42,0.85), rgba(15,23,42,0.98))" }}>
         <div className="max-w-2xl mx-auto px-3 py-2.5 space-y-2">
           {replyTo && (
             <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 text-xs">
@@ -743,14 +722,9 @@ export default function Chat() {
                 <div className="font-semibold text-slate-200 truncate">
                   Réponse à {replyTo.user_id === user?.id ? "vous" : displayName(profiles[replyTo.user_id])}
                 </div>
-                <div className="text-slate-400 truncate">
-                  {parseMessage(replyTo.content).text || (replyTo.image_url ? "📎 Pièce jointe" : "")}
-                </div>
+                <div className="text-slate-400 truncate">{replyTo.content || (replyTo.image_url ? "📷 Image" : "")}</div>
               </div>
-              <button
-                onClick={() => setReplyTo(null)}
-                className="w-6 h-6 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center"
-              >
+              <button onClick={() => setReplyTo(null)} className="w-6 h-6 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center">
                 <X className="w-3.5 h-3.5" />
               </button>
             </div>
@@ -760,78 +734,32 @@ export default function Chat() {
               {imagePreview ? (
                 <div className="relative inline-block">
                   <img src={imagePreview} alt="aperçu" className="max-h-24 rounded-xl border border-white/10" />
-                  <button
-                    onClick={() => handleImagePick(null)}
-                    className="absolute -top-1.5 -right-1.5 w-6 h-6 rounded-full bg-slate-900 border border-white/20 flex items-center justify-center"
-                  >
+                  <button onClick={() => handleImagePick(null)} className="absolute -top-1.5 -right-1.5 w-6 h-6 rounded-full bg-slate-900 border border-white/20 flex items-center justify-center">
                     <X className="w-3.5 h-3.5" />
                   </button>
                 </div>
               ) : (
                 <div className="relative inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-white/5 border border-white/10 pr-8 max-w-full">
-                  {imageFile.type.startsWith("video/") ? (
-                    <Play className="w-4 h-4 text-amber-300 shrink-0" />
-                  ) : (
-                    <FileText className="w-4 h-4 text-amber-300 shrink-0" />
-                  )}
+                  {imageFile.type.startsWith("video/") ? <Play className="w-4 h-4 text-amber-300 shrink-0" /> : <FileText className="w-4 h-4 text-amber-300 shrink-0" />}
                   <span className="text-xs text-slate-200 truncate max-w-[220px]">{imageFile.name}</span>
-                  <span className="text-[10px] text-slate-500">{humanSize(imageFile.size)}</span>
-                  <button
-                    onClick={() => handleImagePick(null)}
-                    className="absolute -top-1.5 -right-1.5 w-6 h-6 rounded-full bg-slate-900 border border-white/20 flex items-center justify-center"
-                  >
+                  <span className="text-[10px] text-slate-500">{(imageFile.size / (1024 * 1024)).toFixed(1)} MB</span>
+                  <button onClick={() => handleImagePick(null)} className="absolute -top-1.5 -right-1.5 w-6 h-6 rounded-full bg-slate-900 border border-white/20 flex items-center justify-center">
                     <X className="w-3.5 h-3.5" />
                   </button>
                 </div>
               )}
             </div>
           )}
-          {uploadPct !== null && (
-            <div className="space-y-1">
-              <div className="flex items-center justify-between text-[11px] text-slate-300">
-                <span className="truncate">Envoi du fichier…</span>
-                <span className="font-semibold text-amber-300 tabular-nums">{uploadPct}%</span>
-              </div>
-              <div className="h-1.5 w-full rounded-full bg-white/10 overflow-hidden">
-                <div
-                  className="h-full rounded-full bg-gradient-to-r from-amber-500 to-emerald-500 transition-all duration-200"
-                  style={{ width: `${uploadPct}%` }}
-                />
-              </div>
-            </div>
-          )}
           <div className="flex items-end gap-2">
             {!voiceActive && (
               <>
-                <label
-                  className="w-10 h-10 shrink-0 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 flex items-center justify-center cursor-pointer transition"
-                  title="Envoyer une image ou une vidéo"
-                >
+                <label className="w-10 h-10 shrink-0 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 flex items-center justify-center cursor-pointer transition" title="Envoyer une image ou une vidéo">
                   <ImagePlus className="w-4 h-4 text-amber-300" />
-                  <input
-                    type="file"
-                    accept="image/*,video/*"
-                    className="hidden"
-                    onChange={(e) => {
-                      handleImagePick(e.target.files?.[0] || null);
-                      e.currentTarget.value = "";
-                    }}
-                  />
+                  <input type="file" accept="image/*,video/*" className="hidden" onChange={(e) => { handleImagePick(e.target.files?.[0] || null); e.currentTarget.value = ""; }} />
                 </label>
-                <label
-                  className="w-10 h-10 shrink-0 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 flex items-center justify-center cursor-pointer transition"
-                  title="Envoyer un fichier (PDF, APK, musique, archive…)"
-                >
+                <label className="w-10 h-10 shrink-0 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 flex items-center justify-center cursor-pointer transition" title="Envoyer un fichier">
                   <Paperclip className="w-4 h-4 text-amber-300" />
-                  <input
-                    type="file"
-                    accept="*/*"
-                    className="hidden"
-                    onChange={(e) => {
-                      handleImagePick(e.target.files?.[0] || null);
-                      e.currentTarget.value = "";
-                    }}
-                  />
+                  <input type="file" accept="*/*" className="hidden" onChange={(e) => { handleImagePick(e.target.files?.[0] || null); e.currentTarget.value = ""; }} />
                 </label>
                 <button
                   onClick={() => user && setCallOpen(true)}
@@ -850,28 +778,19 @@ export default function Chat() {
                 <textarea
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) {
-                      e.preventDefault();
-                      void send();
-                    }
-                  }}
+                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
                   rows={1}
                   placeholder={user ? "Écrire un message..." : "Connectez-vous pour discuter"}
                   disabled={!user || sending}
                   className="flex-1 min-w-0 max-h-32 resize-none rounded-2xl bg-white/[0.06] border border-white/10 px-3 py-2.5 text-sm placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500/40"
                 />
-                <button
-                  onClick={send}
-                  disabled={sending || !user || (!input.trim() && !imageFile)}
-                  className="w-10 h-10 shrink-0 rounded-2xl bg-gradient-to-br from-amber-600 to-emerald-600 hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center transition"
-                  aria-label="Envoyer"
-                >
+                <button onClick={send} disabled={sending || !user || (!input.trim() && !imageFile)} className="w-10 h-10 shrink-0 rounded-2xl bg-gradient-to-br from-amber-600 to-emerald-600 hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center transition" aria-label="Envoyer">
                   {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                 </button>
               </>
             )}
           </div>
+
         </div>
       </div>
 
@@ -926,8 +845,7 @@ export default function Chat() {
                 {parseMessage(originalFor.content).original}
               </div>
               <p className="text-[11px] text-slate-400">
-                Modifié le{" "}
-                {new Date(parseMessage(originalFor.content).editedAt || originalFor.created_at).toLocaleString()}
+                Modifié le {new Date(parseMessage(originalFor.content).editedAt || originalFor.created_at).toLocaleString()}
               </p>
             </div>
           )}
@@ -944,7 +862,12 @@ export default function Chat() {
       />
 
       {user && (
-        <CallHistoryDialog open={historyOpen} onClose={() => setHistoryOpen(false)} userId={user.id} profiles={profiles} />
+        <CallHistoryDialog
+          open={historyOpen}
+          onClose={() => setHistoryOpen(false)}
+          userId={user.id}
+          profiles={profiles}
+        />
       )}
 
       {/* Global VoiceCallPanel is rendered by GlobalCallRoot to persist across navigation */}

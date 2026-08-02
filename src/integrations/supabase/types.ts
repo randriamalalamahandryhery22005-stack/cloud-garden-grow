@@ -10,7 +10,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.15"
+    PostgrestVersion: "14.5"
   }
   public: {
     Tables: {
@@ -404,7 +404,7 @@ export type Database = {
           id: string
           is_active: boolean
           payment_proof_url: string | null
-          price_amount: number | null
+          price_amount: number
           rejection_reason: string | null
           user_id: string
         }
@@ -417,7 +417,7 @@ export type Database = {
           id?: string
           is_active?: boolean
           payment_proof_url?: string | null
-          price_amount?: number | null
+          price_amount?: number
           rejection_reason?: string | null
           user_id: string
         }
@@ -430,7 +430,7 @@ export type Database = {
           id?: string
           is_active?: boolean
           payment_proof_url?: string | null
-          price_amount?: number | null
+          price_amount?: number
           rejection_reason?: string | null
           user_id?: string
         }
@@ -1262,48 +1262,7 @@ export type Database = {
       }
     }
     Views: {
-      public_profiles: {
-        Row: {
-          avatar_url: string | null
-          country_code: string | null
-          created_at: string | null
-          full_name: string | null
-          gender: string | null
-          is_validated: boolean | null
-          last_seen_at: string | null
-          name: string | null
-          region: string | null
-          status: string | null
-          user_id: string | null
-        }
-        Insert: {
-          avatar_url?: string | null
-          country_code?: string | null
-          created_at?: string | null
-          full_name?: string | null
-          gender?: string | null
-          is_validated?: boolean | null
-          last_seen_at?: string | null
-          name?: string | null
-          region?: string | null
-          status?: string | null
-          user_id?: string | null
-        }
-        Update: {
-          avatar_url?: string | null
-          country_code?: string | null
-          created_at?: string | null
-          full_name?: string | null
-          gender?: string | null
-          is_validated?: boolean | null
-          last_seen_at?: string | null
-          name?: string | null
-          region?: string | null
-          status?: string | null
-          user_id?: string | null
-        }
-        Relationships: []
-      }
+      [_ in never]: never
     }
     Functions: {
       app_access_code_required: { Args: never; Returns: boolean }

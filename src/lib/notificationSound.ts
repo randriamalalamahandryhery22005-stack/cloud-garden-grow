@@ -3,8 +3,6 @@
 // à la volée sans dépendance à un fichier binaire (fonctionne toujours,
 // même hors ligne).
 
-import ringtoneAsset from "@/assets/ringtone-call.ogg.asset.json";
-
 export type SoundKind =
   | "message"
   | "voice"
@@ -204,68 +202,39 @@ export function playNotificationSound(kind: SoundKind, opts: { force?: boolean }
 /** Sonnerie continue (appel entrant). Retourne une fonction d'arrêt. */
 export function startRingtone(): () => void {
   if (typeof window === "undefined") return () => {};
-  const s = readSoundSettings();
   let stopped = false;
   let timer: number | null = null;
-  let fallbackTimer: number | null = null;
-  let retryHandler: (() => void) | null = null;
+  let vibrateTimer: number | null = null;
 
-  // Fallback synthesized ring (used if the audio file fails or is blocked)
-  const startSynthFallback = () => {
-    if (fallbackTimer !== null || stopped) return;
-    const tick = () => {
-      if (stopped) return;
-      if (s.enabled) {
-        try { playDesign("ring", Math.max(0.35, s.volume), true); } catch { /* noop */ }
-      }
-      fallbackTimer = window.setTimeout(tick, 1400);
-    };
-    tick();
+  // Un appel entrant doit toujours sonner : on force la reprise du contexte
+  // audio à chaque cycle (il peut être suspendu par le navigateur) et on
+  // ignore volontairement l'anti-spam.
+  const tick = () => {
+    if (stopped) return;
+    const s = readSoundSettings();
+    const c = getCtx();
+    if (c && c.state === "suspended") c.resume().catch(() => {});
+    try { playDesign("ring", Math.max(0.4, s.volume), true); } catch { /* noop */ }
+    timer = window.setTimeout(tick, 1400);
   };
+  tick();
 
-  let audio: HTMLAudioElement | null = null;
-  try {
-    audio = new Audio(ringtoneAsset.url);
-  } catch {
-    audio = null;
-  }
+  const vibrate = () => {
+    if (stopped) return;
+    try { navigator.vibrate?.([300, 200, 300, 200, 300]); } catch { /* noop */ }
+    vibrateTimer = window.setTimeout(vibrate, 1600);
+  };
+  vibrate();
 
-  if (audio && s.enabled) {
-    audio.loop = true;
-    audio.volume = Math.max(0.35, s.volume);
-    audio.addEventListener("error", () => { if (!stopped) startSynthFallback(); });
-    const play = () => {
-      audio?.play().catch(() => {
-        // Autoplay blocked: retry on the very next user gesture, never throw.
-        if (retryHandler || stopped) return;
-        retryHandler = () => {
-          if (stopped) return;
-          audio?.play().catch(() => startSynthFallback());
-        };
-        window.addEventListener("pointerdown", retryHandler, { once: true });
-        window.addEventListener("keydown", retryHandler, { once: true });
-        // Also make sure something audible happens even before the gesture.
-        startSynthFallback();
-      });
-    };
-    play();
-  } else if (s.enabled) {
-    startSynthFallback();
-  }
-
-  if (navigator.vibrate) {
-    try { navigator.vibrate([300, 200, 300, 200, 300]); } catch { /* noop */ }
-  }
+  const onVisible = () => { if (!stopped) tick(); };
+  document.addEventListener("visibilitychange", onVisible);
 
   return () => {
     stopped = true;
     if (timer) window.clearTimeout(timer);
-    if (fallbackTimer) window.clearTimeout(fallbackTimer);
-    if (audio) { try { audio.pause(); audio.currentTime = 0; } catch { /* noop */ } }
-    if (retryHandler) {
-      window.removeEventListener("pointerdown", retryHandler);
-      window.removeEventListener("keydown", retryHandler);
-    }
-    if (navigator.vibrate) { try { navigator.vibrate(0); } catch { /* noop */ } }
+    if (vibrateTimer) window.clearTimeout(vibrateTimer);
+    document.removeEventListener("visibilitychange", onVisible);
+    try { navigator.vibrate?.(0); } catch { /* noop */ }
   };
 }
+

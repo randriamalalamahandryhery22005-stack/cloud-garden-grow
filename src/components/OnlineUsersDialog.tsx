@@ -45,7 +45,7 @@ const OnlineUsersDialog = ({ open, onOpenChange }: OnlineUsersDialogProps) => {
       }
 
       const { data: profiles } = await supabase
-        .from("public_profiles")
+        .from("profiles")
         .select("user_id, full_name, name, avatar_url")
         .in("user_id", ids);
 
