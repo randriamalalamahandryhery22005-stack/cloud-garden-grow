@@ -10,7 +10,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.5"
+    PostgrestVersion: "14.15"
   }
   public: {
     Tables: {
@@ -373,6 +373,27 @@ export type Database = {
         }
         Relationships: []
       }
+      device_accounts: {
+        Row: {
+          created_at: string
+          device_id: string
+          id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          device_id: string
+          id?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          device_id?: string
+          id?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       football_cache: {
         Row: {
           cache_key: string
@@ -404,7 +425,7 @@ export type Database = {
           id: string
           is_active: boolean
           payment_proof_url: string | null
-          price_amount: number
+          price_amount: number | null
           rejection_reason: string | null
           user_id: string
         }
@@ -417,7 +438,7 @@ export type Database = {
           id?: string
           is_active?: boolean
           payment_proof_url?: string | null
-          price_amount?: number
+          price_amount?: number | null
           rejection_reason?: string | null
           user_id: string
         }
@@ -430,7 +451,7 @@ export type Database = {
           id?: string
           is_active?: boolean
           payment_proof_url?: string | null
-          price_amount?: number
+          price_amount?: number | null
           rejection_reason?: string | null
           user_id?: string
         }
@@ -1262,11 +1283,53 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      public_profiles: {
+        Row: {
+          avatar_url: string | null
+          country_code: string | null
+          created_at: string | null
+          full_name: string | null
+          gender: string | null
+          is_validated: boolean | null
+          last_seen_at: string | null
+          name: string | null
+          region: string | null
+          status: string | null
+          user_id: string | null
+        }
+        Insert: {
+          avatar_url?: string | null
+          country_code?: string | null
+          created_at?: string | null
+          full_name?: string | null
+          gender?: string | null
+          is_validated?: boolean | null
+          last_seen_at?: string | null
+          name?: string | null
+          region?: string | null
+          status?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          avatar_url?: string | null
+          country_code?: string | null
+          created_at?: string | null
+          full_name?: string | null
+          gender?: string | null
+          is_validated?: boolean | null
+          last_seen_at?: string | null
+          name?: string | null
+          region?: string | null
+          status?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       app_access_code_required: { Args: never; Returns: boolean }
       consume_user_coins: { Args: never; Returns: undefined }
+      device_account_count: { Args: { _device_id: string }; Returns: number }
       get_active_device: { Args: { _user_id: string }; Returns: string }
       get_total_revenue: { Args: never; Returns: number }
       has_active_premium_bonus: { Args: { _user_id: string }; Returns: boolean }

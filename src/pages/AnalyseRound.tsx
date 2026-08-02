@@ -6,6 +6,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { aviatorLogo } from "@/lib/gameLogos";
 import { cosmoxLogo } from "@/lib/gameLogos";
 import { jetxLogo } from "@/lib/gameLogos";
+import GameLogoFrame from "@/components/GameLogoFrame";
 
 type HomeGame = Extract<GameKey, "aviator-premium" | "cosmox" | "jetx">;
 
@@ -35,9 +36,7 @@ const AnalyseRound = () => {
           <ArrowLeft className="w-5 h-5 text-muted-foreground" />
         </button>
         <div className="flex items-center gap-3 min-w-0">
-          <div className={`w-11 h-11 rounded-2xl border border-border/40 bg-gradient-to-br ${meta.accent} flex items-center justify-center overflow-hidden`}>
-            <img src={meta.logo} alt={meta.name} className="w-8 h-8 object-contain" />
-          </div>
+          <GameLogoFrame src={meta.logo} alt={meta.name} size="sm" className="w-11 h-11 rounded-2xl" />
           <div className="min-w-0">
             <h1 className="text-base font-black gold-text flex items-center gap-1.5 truncate">
               <Target className="w-4 h-4 text-primary" /> Analyse — {meta.name}

@@ -15,6 +15,7 @@ import AdminOnlineUsersPanel from "@/components/AdminOnlineUsersPanel";
 import AdminGenStorePanel from "@/components/AdminGenStorePanel";
 import AdminSecurityPanel from "@/components/AdminSecurityPanel";
 import AdminReviewsPanel from "@/components/AdminReviewsPanel";
+import AdminRestrictedPanel from "@/components/AdminRestrictedPanel";
 import AdminPremiumBonusPanel from "@/components/AdminPremiumBonusPanel";
 
 import { toast } from "sonner";
@@ -43,7 +44,7 @@ interface GameAccess {
 interface AppUpdate { id: string; title: string; update_url: string; is_active: boolean; created_at: string; }
 interface UserPoints { user_id: string; total: number; }
 
-type Tab = "dashboard" | "users" | "codes" | "resets" | "premium" | "bonuses" | "settings" | "points" | "notifications" | "rewards" | "chat" | "sessions" | "online_live" | "gen_store" | "security" | "reviews";
+type Tab = "dashboard" | "users" | "codes" | "resets" | "premium" | "bonuses" | "settings" | "points" | "notifications" | "rewards" | "chat" | "sessions" | "online_live" | "gen_store" | "security" | "reviews" | "restricted";
 
 interface OnlineSession {
   user_id: string;
@@ -117,6 +118,7 @@ const Admin = () => {
   const [newUpdateUrl, setNewUpdateUrl] = useState("");
   const [newUpdateTitle, setNewUpdateTitle] = useState("Mise à jour");
   const [searchQuery, setSearchQuery] = useState("");
+  const [restrictedCount, setRestrictedCount] = useState(0);
   const [userFilter, setUserFilter] = useState<"all" | "free" | "premium">("all");
   const [userPointsMap, setUserPointsMap] = useState<Record<string, number>>({});
   const [gameUsageStats, setGameUsageStats] = useState<Record<string, number>>({});
@@ -404,6 +406,23 @@ const Admin = () => {
   const sortedGames = Object.entries(gameUsageStats).sort((a, b) => b[1] - a[1]);
   const mostPopularGame = sortedGames[0]?.[0] || null;
 
+  useEffect(() => {
+    let alive = true;
+    const loadRestricted = async () => {
+      const { count } = await supabase
+        .from("profiles")
+        .select("user_id", { count: "exact", head: true })
+        .in("status", ["restricted", "blocked"]);
+      if (alive) setRestrictedCount(count ?? 0);
+    };
+    void loadRestricted();
+    const ch = supabase
+      .channel(`admin-restricted-count-${Math.random().toString(36).slice(2)}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, () => void loadRestricted())
+      .subscribe();
+    return () => { alive = false; try { supabase.removeChannel(ch); } catch { /* noop */ } };
+  }, []);
+
   const tabs: { id: Tab; label: string; icon: React.ReactNode; badge?: number }[] = [
     { id: "dashboard", label: "Accueil", icon: <BarChart3 className="w-3.5 h-3.5" /> },
     { id: "users", label: "Utilisateurs", icon: <Users className="w-3.5 h-3.5" />, badge: profiles.length },
@@ -422,6 +441,7 @@ const Admin = () => {
     { id: "gen_store", label: "J&H Store", icon: <ImageIcon className="w-3.5 h-3.5" /> },
     { id: "security", label: "Sécurité", icon: <Shield className="w-3.5 h-3.5" /> },
     { id: "reviews", label: "Examens", icon: <Shield className="w-3.5 h-3.5" /> },
+    { id: "restricted", label: "Comptes restreints", icon: <UserX className="w-3.5 h-3.5" />, badge: restrictedCount || undefined },
     
   ];
 
@@ -429,7 +449,7 @@ const Admin = () => {
 
   const TAB_GROUPS: { title: string; items: Tab[] }[] = [
     { title: "Vue d'ensemble", items: ["dashboard", "online_live", "sessions", "points"] },
-    { title: "Utilisateurs & accès", items: ["users", "premium", "bonuses", "rewards", "resets"] },
+    { title: "Utilisateurs & accès", items: ["users", "restricted", "premium", "bonuses", "rewards", "resets"] },
     { title: "Contenu & comm.", items: ["chat", "notifications", "gen_store"] },
     { title: "Configuration", items: ["codes", "settings", "security", "reviews"] },
   ];
@@ -1412,6 +1432,11 @@ const Admin = () => {
         {tab === "security" && (
           <div style={{ animation: "fade-up 0.4s ease forwards" }}>
             <AdminSecurityPanel />
+          </div>
+        )}
+        {tab === "restricted" && (
+          <div style={{ animation: "fade-up 0.4s ease forwards" }}>
+            <AdminRestrictedPanel />
           </div>
         )}
         {tab === "reviews" && (
